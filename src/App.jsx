@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ago } from './api.js';
 import { AppCtx, Avatar, usePopover } from './components/ui.jsx';
 import { Icon } from './components/icons.jsx';
+import { getPreference, setPreference } from './theme.js';
 import { Login, AcceptInvite } from './views/Auth.jsx';
 import { Board } from './views/Board.jsx';
 import { MyWork } from './views/MyWork.jsx';
@@ -128,6 +129,7 @@ function Workspace({ me, setMe, route }) {
           <NavItem path="/planner" route={route} icon={Icon.calendar} label="Weekly Planner" />
           {ctx.can('users.manage') && <NavItem path="/team" route={route} icon={Icon.team} label="Team Settings" />}
           <div className="sidebar-spacer" />
+          <ThemeSwitch />
           <Notifications items={notifications} reload={reloadNotifications} openTask={openTask} />
           <div className="me">
             <Avatar user={me} size="lg" />
@@ -160,6 +162,17 @@ function NavItem({ path, route, icon: I, label, count, hot }) {
     <a className={`nav-item ${active ? 'active' : ''}`} href={`#${path}`} aria-current={active ? 'page' : undefined}>
       <I /> {label} {count > 0 && <span className={`count ${hot ? 'hot' : ''}`}>{count}</span>}
     </a>
+  );
+}
+
+function ThemeSwitch() {
+  const [pref, setPref] = useState(getPreference);
+  return (
+    <div className="theme-switch" role="group" aria-label="Theme">
+      {[['light', 'Light'], ['dark', 'Dark'], ['system', 'System']].map(([k, l]) => (
+        <button key={k} aria-pressed={pref === k} onClick={() => { setPreference(k); setPref(k); }}>{l}</button>
+      ))}
+    </div>
   );
 }
 

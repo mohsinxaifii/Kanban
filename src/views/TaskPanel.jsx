@@ -269,7 +269,7 @@ function FixAccessBox({ sub, act }) {
   const [note, setNote] = useState('');
   const last = [...sub.reviews].reverse().find((r) => r.decision === 'cannot_access');
   return (
-    <section className="box" style={{ borderColor: '#f4c3b3', background: 'var(--blocked-bg)' }}>
+    <section className="box" style={{ borderColor: 'var(--blocked-border)', background: 'var(--blocked-bg)' }}>
       <h3 className="section-title">{last?.reviewer?.name} cannot open {sub.version}</h3>
       {last && <div className="brief" style={{ marginBottom: 8 }}>“{last.feedback}”</div>}
       <div className="hint" style={{ marginBottom: 8 }}>Share the file with them in Google Drive (this app cannot do it for you), then confirm here so they are asked to try again.</div>

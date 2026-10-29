@@ -99,8 +99,8 @@ export function Board() {
         {sel('owner', 'Action owner', peopleOpts)}
         {sel('priority', 'Priority', [['urgent', 'Urgent'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}
         <label className={`toggle ${f.blocked ? 'on' : ''}`}><input type="checkbox" checked={f.blocked} onChange={(e) => setF({ ...f, blocked: e.target.checked })} /> Blocked only</label>
-        <label className={`toggle ${f.hideSample ? 'on' : ''}`} style={f.hideSample ? { borderColor: 'var(--ink)', color: 'var(--text)', background: '#f7f7f8' } : undefined}><input type="checkbox" checked={f.hideSample} onChange={(e) => setF({ ...f, hideSample: e.target.checked })} /> Hide sample work</label>
-        <label className={`toggle ${thumbs ? 'on' : ''}`} style={thumbs ? { borderColor: 'var(--ink)', color: 'var(--text)', background: '#f7f7f8' } : undefined} title="Small Drive thumbnails load with your own Google account"><input type="checkbox" checked={thumbs} onChange={(e) => setThumbs(e.target.checked)} /> Thumbnails</label>
+        <label className={`toggle ${f.hideSample ? 'on' : ''}`} style={f.hideSample ? { borderColor: 'var(--ink)', color: 'var(--text)', background: 'var(--subtle)' } : undefined}><input type="checkbox" checked={f.hideSample} onChange={(e) => setF({ ...f, hideSample: e.target.checked })} /> Hide sample work</label>
+        <label className={`toggle ${thumbs ? 'on' : ''}`} style={thumbs ? { borderColor: 'var(--ink)', color: 'var(--text)', background: 'var(--subtle)' } : undefined} title="Small Drive thumbnails load with your own Google account"><input type="checkbox" checked={thumbs} onChange={(e) => setThumbs(e.target.checked)} /> Thumbnails</label>
         {active > 0 && <button className="btn ghost sm" onClick={() => setF({ client: '', project: '', week: '', creator: '', approver: '', owner: '', priority: '', blocked: false, q: '', hideSample: false })}>Clear filters</button>}
         <span style={{ flex: 1 }} />
         <span className="hint">{filtered.length} of {tasks.length} tasks</span>

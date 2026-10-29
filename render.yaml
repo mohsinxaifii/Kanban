@@ -24,6 +24,12 @@ services:
         value: "true"
       - key: DEMO_PASSWORD
         value: demo-studio-2026
+      # Optional: "Continue with Google" sign-in (OAuth client from Google Cloud Console).
+      # Authorised redirect URI: https://<your-service>.onrender.com/api/auth/google/callback
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       # Optional: Google API key for the Drive link-sharing check.
       - key: GOOGLE_DRIVE_API_KEY
         sync: false

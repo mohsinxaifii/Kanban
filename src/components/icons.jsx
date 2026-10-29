@@ -36,7 +36,7 @@ export function PriorityIcon({ priority, size = 14 }) {
   const n = { high: 3, medium: 2, low: 1 }[priority] || 0;
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" role="img" aria-label={label}><title>{label}</title>
-      {[0, 1, 2].map((i) => <rect key={i} x={2 + i * 4} y={9 - i * 3} width="2.6" height={3 + i * 3} rx="0.8" fill={i < n ? '#4a4b53' : '#d6d6dc'} />)}
+      {[0, 1, 2].map((i) => <rect key={i} x={2 + i * 4} y={9 - i * 3} width="2.6" height={3 + i * 3} rx="0.8" style={{ fill: i < n ? 'var(--text-2)' : 'var(--border-strong)' }} />)}
     </svg>
   );
 }

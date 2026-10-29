@@ -12,10 +12,26 @@ const PW = process.env.DEMO_PASSWORD || 'demo-studio-2026';
 const results = [];
 let server;
 
+// Stand-in for Google's token endpoint: the "code" carries the claims to return.
+import http from 'node:http';
+const FAKE_GOOGLE_PORT = PORT + 500;
+const fakeGoogle = http.createServer((req, res) => {
+  let body = '';
+  req.on('data', (c) => { body += c; });
+  req.on('end', () => {
+    const code = new URLSearchParams(body).get('code');
+    const claims = { iss: 'https://accounts.google.com', aud: 'test-client', exp: Math.floor(Date.now() / 1000) + 600, email_verified: true, ...JSON.parse(Buffer.from(code, 'base64url').toString()) };
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ id_token: `${b64({ alg: 'none' })}.${b64(claims)}.sig` }));
+  });
+}).listen(FAKE_GOOGLE_PORT);
+
 function startServer() {
   return new Promise((resolve, reject) => {
     server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
-      env: { ...process.env, PORT: String(PORT), DATABASE_PATH: DB, DEMO_MODE: 'true', PUBLIC_URL: BASE, GOOGLE_DRIVE_API_KEY: '' },
+      env: { ...process.env, PORT: String(PORT), DATABASE_PATH: DB, DEMO_MODE: 'true', PUBLIC_URL: BASE, GOOGLE_DRIVE_API_KEY: '', TURSO_DATABASE_URL: '',
+        GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', GOOGLE_TOKEN_URL: `http://localhost:${FAKE_GOOGLE_PORT}/token` },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     server.stdout.on('data', (d) => { if (String(d).includes('studio on')) resolve(); });
@@ -221,6 +237,40 @@ async function main() {
   expectStatus('Requests without the app header are refused (cross-site protection)', await kabir.req('POST', `/tasks/${T2}/comments`, { body: 'x' }, { header: false }), 403);
   expectStatus('Signed-out requests are refused', await new Client('anon').get('/tasks'), 401);
 
+  section('Continue with Google');
+  async function googleSignIn(claims, { tamperState = false } = {}) {
+    const c = new Client('google');
+    const start = await fetch(`${BASE}/api/auth/google`, { redirect: 'manual' });
+    const loc = new URL(start.headers.get('location'));
+    const cookie = start.headers.get('set-cookie').split(';')[0];
+    const nonce = loc.searchParams.get('nonce');
+    const code = Buffer.from(JSON.stringify({ nonce, ...claims })).toString('base64url');
+    const state = tamperState ? 'wrong' : loc.searchParams.get('state');
+    const cb = await fetch(`${BASE}/api/auth/google/callback?code=${code}&state=${state}`, { redirect: 'manual', headers: { Cookie: cookie } });
+    const session = (cb.headers.getSetCookie?.() || []).find((x) => x.startsWith('dd_session='));
+    if (session) c.cookie = session.split(';')[0];
+    return { c, location: cb.headers.get('location'), start: loc };
+  }
+  const g0 = await googleSignIn({ email: 'x@example.com' });
+  check('Google sign-in asks only for identity (openid email profile) and returns to this app', g0.start.hostname === 'accounts.google.com' && g0.start.searchParams.get('scope') === 'openid email profile' && g0.start.searchParams.get('redirect_uri') === `${BASE}/api/auth/google/callback`);
+  check('Unknown Google email is refused and no account is created', g0.location.includes('error=no-account') && !(await admin.get('/admin/users')).data.some((u) => u.email === 'x@example.com'));
+  r = await admin.post('/admin/users', { name: 'Gita Google', email: 'gita@example.com', role: 'producer' });
+  const g1 = await googleSignIn({ email: 'GITA@example.com', name: 'Gita' });
+  check('Invited person signing in with the invited Google email is let in', g1.location === '/#/my-work' && (await g1.c.get('/auth/me')).data?.user?.email === 'gita@example.com');
+  check('Their invitation is now accepted (account active)', (await admin.get('/admin/users')).data.find((u) => u.email === 'gita@example.com').status === 'active');
+  const g2 = await googleSignIn({ email: 'gita@example.com' }, { tamperState: true });
+  check('A forged or mismatched state is refused', g2.location.includes('error=google-state') && !g2.c.cookie);
+  const g3 = await googleSignIn({ email: 'gita@example.com', email_verified: false });
+  check('Unverified Google emails are refused', g3.location.includes('error=google-unverified'));
+  const g4 = await googleSignIn({ email: 'gita@example.com', aud: 'someone-else' });
+  check('Tokens issued to another app are refused', g4.location.includes('error=google-token'));
+  const g5 = await googleSignIn({ email: demo('aanya') });
+  check('Demo accounts cannot sign in with Google', g5.location.includes('error=no-account'));
+  const gitaId = (await admin.get('/admin/users')).data.find((u) => u.email === 'gita@example.com').id;
+  await admin.patch(`/admin/users/${gitaId}`, { status: 'deactivated' });
+  const g6 = await googleSignIn({ email: 'gita@example.com' });
+  check('Deactivated people cannot sign in with Google', g6.location.includes('error=deactivated'));
+
   section('Live updates');
   await new Promise((res) => setTimeout(res, 300));
   check('Aanya\'s open session received live change events', events.join('').includes('"changed"') && events.join('').includes('"notification"'));
@@ -260,6 +310,7 @@ async function main() {
   for (const x of results) md.push(x.section ? `\n### ${x.section}\n` : `- ${x.ok ? '✅' : '❌'} ${x.name}${!x.ok && x.detail ? ` (${x.detail})` : ''}`);
   fs.mkdirSync('verify-output', { recursive: true });
   fs.writeFileSync('verify-output/verification-report.md', md.join('\n') + '\n');
+  fakeGoogle.close();
   process.exit(failed.length ? 1 : 0);
 }
 

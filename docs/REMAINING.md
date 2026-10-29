@@ -11,7 +11,7 @@ The app runs end to end today with its own accounts, database and live updates. 
 
 ## Recommended
 
-5. **Google sign-in (OAuth / Google Workspace SSO).** Replaces passwords with the studio's Google accounts and restricts sign-in to the company domain. The invitation and permission model stays the same; only login changes.
+5. **Google sign-in credentials.** “Continue with Google” is built in; it needs an OAuth client ID and secret from Google Cloud Console (README → Google sign-in).
 6. **Google Drive API integration (OAuth, per user).** The optional API-key check only tells you whether a link is shared publicly. A proper integration, using each submitter's Google authorisation, could read the file name and thumbnail, list the file's permissions and warn when the assigned reviewer is not on them. It must keep the rule that the app never changes sharing or makes files public on its own.
 7. **Automated delivery.** Deliveries are recorded manually and labelled "Manual record". Sending through Gmail or Drive sharing with confirmation would allow "Verified automated send" records (the data model already distinguishes them).
 8. **Error monitoring and uptime checks** (Sentry or similar, plus a ping on `/api/health`).

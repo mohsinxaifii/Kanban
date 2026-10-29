@@ -16,7 +16,8 @@ Internal creative-production workspace for Design Dimensions: a Linear-style boa
 - Node.js 22.13+ with Express 5 and SQLite via libSQL: a local file in development, or a hosted Turso database in production
 - React 18 + Vite front end, Inter typeface (bundled)
 - Server-Sent Events for live updates
-- Email + password accounts (scrypt hashes, HttpOnly session cookies), invitation links for new people
+- Sign in with Google or with email and password (scrypt hashes, HttpOnly session cookies); invitation links for new people
+- Light, dark and system themes (switch at the bottom of the sidebar)
 
 ## Run it locally
 
@@ -72,6 +73,7 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 | `TURSO_AUTH_TOKEN` | empty | Token for the Turso database |
 | `DEMO_MODE` | `true` | Seed the demo workspace once per database. When `false`, demo accounts cannot sign in |
 | `DEMO_PASSWORD` | `demo-studio-2026` | Password for demo accounts |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Optional. Enables “Continue with Google”. See Google sign-in below |
 | `GOOGLE_DRIVE_API_KEY` | empty | Optional. See Google Drive below |
 
 ## Verification
@@ -79,7 +81,7 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 Two scripts start their own server on a fresh temporary database:
 
 ```bash
-npm run verify       # 96 API checks with separate signed-in accounts
+npm run verify       # 105 API checks with separate signed-in accounts
 npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright Chromium, or CHROME_PATH=/path/to/chrome)
 ```
 
@@ -93,6 +95,17 @@ npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright C
 - open sessions receive live updates, and everything persists across a server restart.
 
 It writes `verify-output/verification-report.md`. The UI walkthrough saves screenshots to `verify-output/screens/`.
+
+## Google sign-in
+
+“Continue with Google” appears on the sign-in and invitation pages once `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. Google only proves who someone is: the email must already belong to someone added in Team Settings. An invited person who signs in with Google using the invited email is activated; anyone else is turned away, and no account is ever created from a Google sign-in. Demo accounts cannot use Google.
+
+To create the credentials:
+
+1. In [Google Cloud Console](https://console.cloud.google.com), create or pick a project.
+2. **APIs & Services → OAuth consent screen**: choose *External* (or *Internal* if everyone uses your Google Workspace), add the app name and your email, and keep the default scopes (`openid`, `email`, `profile`). Publish the app so it is not limited to test users.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type *Web application*. Under **Authorised redirect URIs** add `https://<your-service>.onrender.com/api/auth/google/callback` (and `http://localhost:3000/api/auth/google/callback` for local use).
+4. Put the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Render → Environment).
 
 ## Google Drive
 

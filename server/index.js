@@ -10,6 +10,7 @@ import {
 } from './workflow.js';
 import { parseDriveLink, previewUrl, driveIntegration, checkLinkSharing } from './drive.js';
 import { hashPassword, verifyPassword } from './passwords.js';
+import { googleEnabled, startUrl, finish } from './google.js';
 import { seedDemo, DEMO_PASSWORD } from './seed.js';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -75,7 +76,7 @@ async function setSession(res, userId) {
   const expires = new Date(Date.now() + SESSION_DAYS * 864e5);
   await run('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)', token, userId, expires.toISOString());
   const secure = process.env.COOKIE_SECURE === 'true' || PUBLIC_URL.startsWith('https://') ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Expires=${expires.toUTCString()}${secure}`);
+  res.append('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Expires=${expires.toUTCString()}${secure}`);
 }
 async function sessionUser(req) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
@@ -129,9 +130,39 @@ app.post('/api/auth/logout', async (req, res) => {
 });
 app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
 app.get('/api/auth/demo', async (req, res) => {
-  if (!DEMO_MODE) return res.json({ enabled: false, accounts: [] });
+  if (!DEMO_MODE) return res.json({ enabled: false, accounts: [], google: googleEnabled() });
   const accounts = await all("SELECT name, email, title FROM users WHERE is_demo = 1 AND status = 'active' ORDER BY id");
-  res.json({ enabled: true, password: DEMO_PASSWORD, accounts });
+  res.json({ enabled: true, password: DEMO_PASSWORD, accounts, google: googleEnabled() });
+});
+
+// ---------- Google sign-in ----------
+const OAUTH_COOKIE = 'dd_oauth';
+const loginError = (res, code) => res.redirect(`/#/login?error=${code}`);
+app.get('/api/auth/google', (req, res) => {
+  if (!googleEnabled()) return loginError(res, 'google-off');
+  const { url, state, nonce } = startUrl(PUBLIC_URL);
+  const secure = PUBLIC_URL.startsWith('https://') ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${OAUTH_COOKIE}=${state}.${nonce}; HttpOnly; SameSite=Lax; Path=/api/auth/google; Max-Age=600${secure}`);
+  res.redirect(url);
+});
+app.get('/api/auth/google/callback', async (req, res) => {
+  const [state, nonce] = String(parseCookies(req.headers.cookie)[OAUTH_COOKIE] || '').split('.');
+  res.setHeader('Set-Cookie', `${OAUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/api/auth/google; Max-Age=0`);
+  if (!googleEnabled()) return loginError(res, 'google-off');
+  if (req.query.error) return loginError(res, 'google-cancelled');
+  if (!state || state !== req.query.state || !req.query.code) return loginError(res, 'google-state');
+  let profile;
+  try { profile = await finish(String(req.query.code), PUBLIC_URL, nonce); } catch (e) { return loginError(res, e.message.startsWith('google-') ? e.message : 'google-token'); }
+  const row = await one('SELECT * FROM users WHERE email = ?', profile.email);
+  // Google never creates accounts: the person must have been added in Team settings.
+  if (!row || row.is_demo) return loginError(res, 'no-account');
+  if (row.status === 'deactivated') return loginError(res, 'deactivated');
+  if (row.status === 'invited') {
+    // Signing in with the invited, Google-verified email accepts the invitation.
+    await run("UPDATE users SET status = 'active', invite_token = NULL WHERE id = ?", row.id);
+  }
+  await setSession(res, row.id);
+  res.redirect('/#/my-work');
 });
 app.get('/api/invite/:token', async (req, res) => {
   const r = await one("SELECT name, email FROM users WHERE invite_token = ? AND status = 'invited'", req.params.token);

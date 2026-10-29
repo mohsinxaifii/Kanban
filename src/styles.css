@@ -1,6 +1,7 @@
 @import '@fontsource-variable/inter';
 
 :root {
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%237a7c85' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --bg: #fcfcfd;
   --surface: #ffffff;
   --sidebar: #f6f6f7;
@@ -124,10 +125,12 @@ a:hover { text-decoration: underline; }
 
 /* ---------- board ---------- */
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.filter { height: 26px; border: 1px dashed var(--border-strong); border-radius: 6px; padding: 0 6px; background: var(--surface); font-size: 12px; color: var(--text-2); max-width: 140px; cursor: pointer; }
+.filter { height: 28px; line-height: 26px; border: 1px dashed var(--border-strong); border-radius: 6px; padding: 0 24px 0 9px; background-color: var(--surface); font-size: 12px; color: var(--text-2); max-width: 150px; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+select.filter, select.select { appearance: none; -webkit-appearance: none; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 8px center; background-size: 10px 10px; }
+select.select { padding-right: 28px; }
 .filter.on { border-style: solid; border-color: var(--ink); color: var(--text); background: var(--subtle); }
-.search { height: 26px; border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; width: 150px; background: var(--surface); font-size: 12px; }
-.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); height: 26px; padding: 0 8px; border: 1px dashed var(--border-strong); border-radius: 6px; cursor: pointer; }
+.search { height: 28px; border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; width: 150px; background: var(--surface); font-size: 12px; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); height: 28px; padding: 0 9px; border: 1px dashed var(--border-strong); border-radius: 6px; cursor: pointer; }
 .toggle.on { border-style: solid; border-color: var(--blocked); color: var(--blocked); background: var(--blocked-bg); }
 .board { display: flex; gap: 10px; padding: 12px 16px 16px; height: 100%; min-width: max-content; }
 .column { width: 290px; flex: none; display: flex; flex-direction: column; background: var(--column); border-radius: 10px; min-height: 0; border: 1px solid transparent; transition: border-color .12s, background .12s; }
@@ -315,18 +318,19 @@ a:hover { text-decoration: underline; }
 
 /* ---------- dark theme ---------- */
 :root[data-theme="dark"] {
-  --bg: #0e0e10;
-  --surface: #151518;
-  --sidebar: #111113;
-  --column: #19191d;
-  --hover: #222227;
-  --active: #2a2a30;
-  --border: #26262c;
-  --border-strong: #37373f;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23a2a4ad' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --bg: #1c1d21;
+  --surface: #24252a;
+  --sidebar: #1f2024;
+  --column: #222328;
+  --hover: #303137;
+  --active: #383940;
+  --border: #35363d;
+  --border-strong: #474851;
   --text: #ececf0;
   --text-2: #b7b8c0;
-  --muted: #8a8c95;
-  --faint: #5d5f68;
+  --muted: #9a9ca5;
+  --faint: #6e7079;
   --ink: #f1f1f4;
   --ink-contrast: #111114;
   --ink-hover: #d6d6dc;
@@ -339,7 +343,7 @@ a:hover { text-decoration: underline; }
   --done: #a3c9a3; --done-bg: rgba(130, 190, 130, 0.12);
   --ok: #63d495; --ok-bg: rgba(80, 200, 130, 0.13);
   --approve: #238551; --approve-hover: #2a9a5f;
-  --subtle: #1a1a1e;
+  --subtle: #2c2d33;
   --blocked-border: rgba(255, 120, 85, 0.35);
   --current-border: rgba(242, 198, 97, 0.5);
   --notice-text: #f3d48f;
@@ -367,3 +371,5 @@ a:hover { text-decoration: underline; }
   .panel-body { grid-template-columns: 1fr; }
   .panel-side { border-left: 0; border-top: 1px solid var(--border); }
 }
+:root[data-theme="dark"] .card { background: #2d2e34; border-color: #3a3b42; }
+:root[data-theme="dark"] .card:hover { background: #33343a; }

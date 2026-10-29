@@ -1,23 +1,23 @@
-# Render Blueprint: New > Blueprint in the Render dashboard, then pick this repo.
+# Render Blueprint (free plan). Render: New > Blueprint, pick this repo.
+# Free instances have no persistent disk, so data lives in a free Turso database.
+# Render asks for TURSO_DATABASE_URL and TURSO_AUTH_TOKEN when you apply the blueprint.
 services:
   - type: web
     name: design-dimensions-studio
     runtime: node
-    plan: starter            # a persistent disk needs a paid instance; free instances lose data on every deploy
+    plan: free
     region: singapore
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
-    disk:
-      name: studio-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "22.13.1"
-      - key: DATABASE_PATH
-        value: /var/data/studio.db
+      - key: TURSO_DATABASE_URL     # e.g. libsql://design-dimensions-<you>.turso.io
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
       # Demo people and sample work for trying the app. Set to "false" before adding real
       # clients: demo accounts then stop working and the login page stops listing them.
       - key: DEMO_MODE

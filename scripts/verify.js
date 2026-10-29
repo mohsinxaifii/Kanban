@@ -235,6 +235,23 @@ async function main() {
   check('Product launch reel is still Delivered with full history after restart', r.status === 200 && r.data.stage === 'delivered' && r.data.submissions.length === 2 && r.data.deliveries.length === 1 && r.data.activity.length >= 6);
   check('Sessions persist across restart (Rohan still signed in)', (await rohan.get('/auth/me')).status === 200);
 
+  section('Removing demo data keeps real work');
+  const { execFileSync } = await import('node:child_process');
+  execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'scripts/create-admin.js', 'Real Admin', 'real.admin@example.com'],
+    { env: { ...process.env, DATABASE_PATH: DB, ADMIN_PASSWORD: 'real-admin-password' }, stdio: 'ignore' });
+  const realAdmin = new Client('Real admin');
+  expectStatus('A real administrator created with create-admin can sign in', await realAdmin.login('real.admin@example.com', 'real-admin-password'), 200);
+  const demoAdmin = new Client('demo admin');
+  await demoAdmin.login(demo('studio'));
+  expectStatus('Demo administrators cannot remove demo data', await demoAdmin.post('/admin/demo/remove'), 400);
+  expectStatus('Real administrator removes demo data', await realAdmin.post('/admin/demo/remove'), 200);
+  const left = (await realAdmin.get('/tasks')).data;
+  check('No sample tasks remain', !left.some((t) => t.is_demo));
+  check('Real tasks remain, with their history', left.some((t) => t.title === 'Product launch reel' && t.stage === 'delivered'));
+  const users = (await realAdmin.get('/admin/users')).data;
+  check('Demo people who worked on real tasks are deactivated, not deleted', users.find((u) => u.name === 'Rohan Mehta')?.status === 'deactivated');
+  check('Demo people with no real work are deleted', !users.some((u) => u.name === 'Meera Kapoor'));
+
   await stopServer();
   const failed = results.filter((x) => x.ok === false);
   const passed = results.filter((x) => x.ok).length;

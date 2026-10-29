@@ -1,15 +1,22 @@
-// SQLite persistence via Node's built-in driver (Node >= 22.13).
-import { DatabaseSync } from 'node:sqlite';
+// Persistence via libSQL. Locally it is a plain SQLite file; in production it can
+// point at a hosted Turso database (TURSO_DATABASE_URL + TURSO_AUTH_TOKEN), so the
+// app runs on hosts without a persistent disk.
+import { createClient } from '@libsql/client';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const DB_PATH = process.env.DATABASE_PATH || path.resolve('data/studio.db');
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+const remoteUrl = process.env.TURSO_DATABASE_URL;
+let url = remoteUrl;
+if (!url) {
+  const file = process.env.DATABASE_PATH || path.resolve('data/studio.db');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  url = `file:${file}`;
+}
+export const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+export const dbLocation = remoteUrl ? remoteUrl.replace(/\?.*$/, '') : url;
 
-export const db = new DatabaseSync(DB_PATH);
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
-
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
@@ -87,7 +94,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   status TEXT NOT NULL DEFAULT 'in_review',
   current_step INTEGER NOT NULL DEFAULT 0,
   access_issue INTEGER NOT NULL DEFAULT 0,
-  -- not_checked | verified | failed  (only set to verified by a real Drive integration)
+  -- not_checked | link_shared | restricted | error  (never claims a specific reviewer has access)
   access_check TEXT NOT NULL DEFAULT 'not_checked',
   access_check_detail TEXT
 );
@@ -138,23 +145,59 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_steps_task ON approval_steps(task_id, position);
 CREATE INDEX IF NOT EXISTS idx_subs_task ON submissions(task_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_sub ON reviews(submission_id);
 CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, read);
-`);
+`;
+
+export async function initDb() {
+  if (!remoteUrl) {
+    await client.execute('PRAGMA journal_mode = WAL');
+    await client.execute('PRAGMA busy_timeout = 5000');
+  }
+  await client.execute('PRAGMA foreign_keys = ON');
+  await client.executeMultiple(SCHEMA);
+}
 
 export const now = () => new Date().toISOString();
 
-export function tx(fn) {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const r = fn();
-    db.exec('COMMIT');
-    return r;
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  }
+// Statements inside tx() run on the open transaction (found through async context),
+// so helper functions can call one/all/run without passing a handle around.
+const txStore = new AsyncLocalStorage();
+let queue = Promise.resolve();
+function exclusive(fn) {
+  const result = queue.then(fn, fn);
+  queue = result.catch(() => {});
+  return result;
 }
 
-export const one = (sql, ...p) => db.prepare(sql).get(...p);
-export const all = (sql, ...p) => db.prepare(sql).all(...p);
-export const run = (sql, ...p) => db.prepare(sql).run(...p);
+const toRows = (rs) => rs.rows.map((r) => Object.fromEntries(rs.columns.map((c, i) => [c, r[i]])));
+async function exec(sql, args) {
+  const conn = txStore.getStore() || client;
+  return conn.execute({ sql, args });
+}
+
+export const one = async (sql, ...p) => toRows(await exec(sql, p))[0];
+export const all = async (sql, ...p) => toRows(await exec(sql, p));
+export async function run(sql, ...p) {
+  // Writes outside a transaction wait for any transaction in progress.
+  const rs = txStore.getStore() ? await exec(sql, p) : await exclusive(() => exec(sql, p));
+  return { changes: rs.rowsAffected, lastInsertRowid: rs.lastInsertRowid };
+}
+
+// One write transaction at a time; all statements commit or none do.
+export function tx(fn) {
+  if (txStore.getStore()) return fn();
+  return exclusive(async () => {
+    const t = await client.transaction('write');
+    try {
+      const r = await txStore.run(t, fn);
+      await t.commit();
+      return r;
+    } catch (e) {
+      await t.rollback().catch(() => {});
+      throw e;
+    } finally {
+      t.close();
+    }
+  });
+}

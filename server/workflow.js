@@ -35,9 +35,9 @@ export function loadSteps(taskId) {
   return all('SELECT * FROM approval_steps WHERE task_id = ? ORDER BY position', taskId);
 }
 // The submission that currently drives the workflow (latest non-superseded).
-export function currentSubmission(taskId) {
-  return one(`SELECT * FROM submissions WHERE task_id = ? AND status != 'superseded'
-              ORDER BY id DESC LIMIT 1`, taskId) || null;
+export async function currentSubmission(taskId) {
+  return (await one(`SELECT * FROM submissions WHERE task_id = ? AND status != 'superseded'
+              ORDER BY id DESC LIMIT 1`, taskId)) || null;
 }
 
 // How a user relates to a task. Used for both visibility and authority.
@@ -64,10 +64,10 @@ export function viewLevel(user, task, steps) {
   return null;
 }
 
-export function requireView(user, taskId, level = 'full') {
-  const task = one('SELECT * FROM tasks WHERE id = ?', Number(taskId));
+export async function requireView(user, taskId, level = 'full') {
+  const task = await one('SELECT * FROM tasks WHERE id = ?', Number(taskId));
   if (!task) throw new HttpError(404, 'Task not found.');
-  const steps = loadSteps(task.id);
+  const steps = await loadSteps(task.id);
   const v = viewLevel(user, task, steps);
   if (!v) throw new HttpError(404, 'Task not found.'); // do not reveal existence
   if (level === 'full' && v !== 'full') forbid('You only have access to the delivered files for this task.');

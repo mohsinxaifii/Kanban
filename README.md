@@ -13,7 +13,7 @@ Internal creative-production workspace for Design Dimensions: a Linear-style boa
 
 ## Stack
 
-- Node.js 22.13+ with Express 5 and SQLite (Node's built-in `node:sqlite`, no native build step)
+- Node.js 22.13+ with Express 5 and SQLite via libSQL: a local file in development, or a hosted Turso database in production
 - React 18 + Vite front end, Inter typeface (bundled)
 - Server-Sent Events for live updates
 - Email + password accounts (scrypt hashes, HttpOnly session cookies), invitation links for new people
@@ -67,7 +67,9 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 | --- | --- | --- |
 | `PORT` | `3000` | Port to listen on |
 | `PUBLIC_URL` | `http://localhost:3000` | Used in invite links. An `https://` URL also marks cookies `Secure` |
-| `DATABASE_PATH` | `./data/studio.db` | SQLite file. Must be on persistent storage in production |
+| `DATABASE_PATH` | `./data/studio.db` | Local SQLite file, used when no Turso URL is set |
+| `TURSO_DATABASE_URL` | empty | Hosted database (`libsql://…`). When set, it is used instead of the local file |
+| `TURSO_AUTH_TOKEN` | empty | Token for the Turso database |
 | `DEMO_MODE` | `true` | Seed the demo workspace once per database. When `false`, demo accounts cannot sign in |
 | `DEMO_PASSWORD` | `demo-studio-2026` | Password for demo accounts |
 | `GOOGLE_DRIVE_API_KEY` | empty | Optional. See Google Drive below |
@@ -77,7 +79,7 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 Two scripts start their own server on a fresh temporary database:
 
 ```bash
-npm run verify       # 89 API checks with separate signed-in accounts
+npm run verify       # 96 API checks with separate signed-in accounts
 npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright Chromium, or CHROME_PATH=/path/to/chrome)
 ```
 
@@ -102,17 +104,22 @@ App permissions and Google Drive permissions are separate. Naming a reviewer in 
 
 ## Deploying
 
-### Render (recommended)
+### Render free plan + Turso (no cost)
 
-The repo includes a `render.yaml` Blueprint: a Node web service on the Starter plan with a 1 GB persistent disk for the database.
+Render's free web services have no persistent disk, so the database lives in [Turso](https://turso.tech), a hosted SQLite service with a free tier. The included `render.yaml` sets this up.
 
-1. In the Render dashboard choose **New → Blueprint** and connect this GitHub repository.
-2. Review the plan (Starter, about $7/month plus the disk) and click **Apply**. The first build takes a few minutes.
-3. Open the `onrender.com` URL. Invite links use Render's address automatically; set `PUBLIC_URL` if you add a custom domain.
-4. Create your real administrator from the service's **Shell** tab: `npm run create-admin -- "Your Name" you@designdimensions.com`.
-5. Before adding real clients, set `DEMO_MODE=false` in **Environment**. Demo accounts then stop signing in and the login page no longer lists them. Remove the sample work in Team Settings → Demo data.
+1. **Create the database.** Sign up at turso.tech, create a database (pick the location closest to your Render region, which is Singapore in `render.yaml`), then from the database page copy its **URL** (`libsql://…turso.io`) and create an **auth token**.
+2. **Create the service.** In the Render dashboard choose **New → Blueprint**, connect GitHub and select this repository. When asked, paste `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`, then click **Apply**. The first build takes a few minutes.
+3. Open the `onrender.com` URL. The tables and demo workspace are created automatically on first start. Invite links use Render's address automatically; set `PUBLIC_URL` if you add a custom domain.
+4. Create your real administrator from your own computer, pointed at the same Turso database:
+   ```bash
+   TURSO_DATABASE_URL=libsql://… TURSO_AUTH_TOKEN=… npm run create-admin -- "Your Name" you@designdimensions.com
+   ```
+5. Before adding real clients, set `DEMO_MODE=false` in the service's **Environment** tab. Demo accounts then stop signing in and the login page no longer lists them. Remove the sample work in Team Settings → Demo data.
 
-A free instance would work for a quick look, but it has no persistent disk, so all data is lost on each deploy or restart.
+Free-plan behaviour to expect: the service sleeps after about 15 minutes without visits and takes roughly 30–60 seconds to wake on the next visit. Live updates reconnect automatically. Data is safe in Turso throughout. Check current free-tier limits on both services when you sign up.
+
+To move to an always-on paid instance later, change `plan: free` to `plan: starter` in `render.yaml`; nothing else needs to change.
 
 ### Other hosts
 
@@ -123,7 +130,7 @@ docker build -t dd-studio .
 docker run -p 3000:3000 -v dd-data:/data -e PUBLIC_URL=https://studio.example.com -e DEMO_MODE=false dd-studio
 ```
 
-Run a single instance: live updates and the SQLite database live in one process. Put it behind HTTPS and back up the database file.
+Run a single instance: live updates are held in one process. Put it behind HTTPS, and either mount a persistent volume for the local database file or set `TURSO_DATABASE_URL`.
 
 ## What is still needed
 

@@ -6,7 +6,7 @@ The app runs end to end today with its own accounts, database and live updates. 
 
 1. **Hosting.** A Render Blueprint (`render.yaml`) is included for Render's free plan, with the database in a free Turso database. You need a Render account and a Turso account (README → Deploying). Optionally add a custom domain such as `studio.designdimensions.com` and set `PUBLIC_URL` to it. Run one instance.
 2. **Database backups.** Turso keeps point-in-time history depending on plan; for extra safety schedule a periodic export (`turso db shell <db> .dump > backup.sql`) to your own storage.
-3. **Email for invitations and notifications.** Invites currently produce a link the administrator copies and sends. Connect a transactional email service (Postmark, Resend, SES or Google Workspace SMTP) to send invite links and, optionally, notification digests. Password reset also depends on this; today an administrator can issue a fresh invite link for pending invitations, and `npm run create-admin` can reset an administrator.
+3. **Email for invitations.** Built in through Resend (README → Invitation emails); it needs a Resend account, a verified domain and two Render settings. Password reset by email and notification digests are not built yet; an administrator can issue a fresh invite link for pending invitations, and `npm run create-admin` can reset an administrator.
 4. **A real administrator account and real data.** Run `npm run create-admin`, invite the team, add real clients and projects, remove the demo data and set `DEMO_MODE=false`.
 
 ## Recommended

@@ -67,6 +67,12 @@ function People() {
 }
 
 
+function inviteMessage(u) {
+  if (u.invite_email?.status === 'sent') return `Invitation emailed to ${u.email}`;
+  if (u.invite_email?.status === 'failed') return `Invitation created, but the email failed (${u.invite_email.error}). Copy the link and send it yourself.`;
+  return `Invitation created for ${u.name}. Copy the link below and send it to them.`;
+}
+
 function PersonModal({ user, onClose, onSaved }) {
   const { meta, me, toast, reloadAll } = useApp();
   const isNew = !user;
@@ -84,7 +90,7 @@ function PersonModal({ user, onClose, onSaved }) {
   async function save() {
     try {
       const u = isNew ? await api('/admin/users', { method: 'POST', body: f }) : await api(`/admin/users/${user.id}`, { method: 'PATCH', body: f });
-      toast(isNew ? `Invitation created for ${u.name}` : 'Saved');
+      toast(isNew ? inviteMessage(u) : 'Saved', u.invite_email?.status === 'failed' ? 'err' : 'ok');
       reloadAll();
       onSaved(u);
     } catch (e) { toast(e.message, 'err'); }
@@ -93,7 +99,14 @@ function PersonModal({ user, onClose, onSaved }) {
     try { const u = await api(`/admin/users/${user.id}`, { method: 'PATCH', body: { status } }); toast(status === 'deactivated' ? `${u.name} deactivated` : `${u.name} reactivated`); reloadAll(); onSaved(u); } catch (e) { toast(e.message, 'err'); }
   }
   async function reinvite() {
-    try { const u = await api(`/admin/users/${user.id}/reinvite`, { method: 'POST' }); toast('New invite link created; the old one no longer works.'); onSaved(u); } catch (e) { toast(e.message, 'err'); }
+    try {
+      const u = await api(`/admin/users/${user.id}/reinvite`, { method: 'POST' });
+      toast(`New invite link created; the old one no longer works. ${u.invite_email?.status === 'sent' ? `Emailed to ${u.email}.` : ''}`, u.invite_email?.status === 'failed' ? 'err' : 'ok');
+      onSaved(u);
+    } catch (e) { toast(e.message, 'err'); }
+  }
+  async function emailAgain() {
+    try { await api(`/admin/users/${user.id}/send-invite`, { method: 'POST' }); toast(`Invitation emailed to ${user.email}`); } catch (e) { toast(e.message, 'err'); }
   }
 
   return (
@@ -110,8 +123,11 @@ function PersonModal({ user, onClose, onSaved }) {
         <div className="field"><span className="label">Invite link</span>
           <div className="copy-row"><input className="input" readOnly value={user.invite_url} onFocus={(e) => e.target.select()} aria-label="Invite link" />
             <button className="btn" onClick={() => { navigator.clipboard?.writeText(user.invite_url); toast('Invite link copied'); }}>Copy</button>
+            {meta.emailEnabled && <button className="btn" onClick={emailAgain}>Email again</button>}
             <button className="btn" onClick={reinvite}>New link</button></div>
-          <span className="hint">Email sending is not configured yet, so send this link to {user.name.split(' ')[0]} yourself. They get access only after accepting it.</span>
+          <span className="hint">{meta.emailEnabled
+            ? `The invitation is emailed to ${user.email}. You can also copy the link and send it yourself. They get access only after accepting it.`
+            : `Email sending is not set up, so send this link to ${user.name.split(' ')[0]} yourself. They get access only after accepting it.`}</span>
         </div>
       )}
       {user?.status === 'deactivated' && <Notice>This person cannot sign in. Their name stays on past work.</Notice>}

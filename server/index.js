@@ -11,6 +11,7 @@ import {
 import { parseDriveLink, previewUrl, driveIntegration, checkLinkSharing } from './drive.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import { googleEnabled, startUrl, finish } from './google.js';
+import { emailEnabled, sendInvite } from './email.js';
 import { seedDemo, DEMO_PASSWORD } from './seed.js';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -249,6 +250,7 @@ app.get('/api/meta', auth, async (req, res) => {
     permissions: PERMISSIONS, roles: ROLES,
     projects: await visibleProjects(req.user),
     driveIntegration: driveIntegration(),
+    emailEnabled: emailEnabled(),
     demoMode: DEMO_MODE,
   });
 });
@@ -823,6 +825,11 @@ function adminView(r) {
   const u = rowToUser(r);
   return { ...u, invite_url: r.status === 'invited' && r.invite_token ? `${PUBLIC_URL}/#/invite/${r.invite_token}` : null };
 }
+async function emailInvite(row, inviter) {
+  const v = adminView(row);
+  if (!v.invite_url) return { status: 'not_invited' };
+  return sendInvite({ to: row.email, name: row.name, inviter: inviter.name, url: v.invite_url, publicUrl: PUBLIC_URL });
+}
 async function assertAdminRemains(excludingId, nextUser) {
   const admins = (await all("SELECT * FROM users WHERE status = 'active'")).map(rowToUser)
     .map((u) => (u.id === excludingId ? nextUser : u))
@@ -846,7 +853,8 @@ app.post('/api/admin/users', auth, need('users.manage'), async (req, res) => {
   const r = await run(`INSERT INTO users (name, email, title, role, permissions, project_access, status, invite_token, invited_by, color, created_at)
     VALUES (?,?,?,?,?,?,'invited',?,?,?,?)`, name, email, str(req.body.title, 80), role, JSON.stringify(perms), JSON.stringify(access), token, req.user.id, color, now());
   flush();
-  res.status(201).json(adminView(await one('SELECT * FROM users WHERE id = ?', Number(r.lastInsertRowid))));
+  const row = await one('SELECT * FROM users WHERE id = ?', Number(r.lastInsertRowid));
+  res.status(201).json({ ...adminView(row), invite_email: await emailInvite(row, req.user) });
 });
 app.patch('/api/admin/users/:id', auth, need('users.manage'), async (req, res) => {
   const row = await one('SELECT * FROM users WHERE id = ?', Number(req.params.id));
@@ -882,7 +890,16 @@ app.post('/api/admin/users/:id/reinvite', auth, need('users.manage'), async (req
   const row = await one('SELECT * FROM users WHERE id = ?', Number(req.params.id));
   if (!row || row.status !== 'invited') bad('Only pending invitations can be re-sent.');
   await run('UPDATE users SET invite_token = ? WHERE id = ?', crypto.randomBytes(24).toString('base64url'), row.id);
-  res.json(adminView(await one('SELECT * FROM users WHERE id = ?', row.id)));
+  const fresh = await one('SELECT * FROM users WHERE id = ?', row.id);
+  res.json({ ...adminView(fresh), invite_email: req.body.email === false ? { status: 'skipped' } : await emailInvite(fresh, req.user) });
+});
+app.post('/api/admin/users/:id/send-invite', auth, need('users.manage'), async (req, res) => {
+  const row = await one('SELECT * FROM users WHERE id = ?', Number(req.params.id));
+  if (!row || row.status !== 'invited') bad('Only pending invitations can be emailed.');
+  if (!emailEnabled()) bad('Email sending is not set up. Add RESEND_API_KEY and EMAIL_FROM in Render.');
+  const email = await emailInvite(row, req.user);
+  if (email.status !== 'sent') throw new HttpError(502, `The invitation email could not be sent: ${email.error}`);
+  res.json({ ...adminView(row), invite_email: email });
 });
 app.get('/api/admin/projects', auth, need('users.manage'), async (req, res) => {
   res.json({

@@ -88,6 +88,7 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 | `DEMO_PASSWORD` | `demo-studio-2026` | Password for demo accounts |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Optional. Enables “Continue with Google”. See Google sign-in below |
 | `GOOGLE_DRIVE_API_KEY` | empty | Optional. See Google Drive below |
+| `RESEND_API_KEY` / `EMAIL_FROM` | empty | Optional. Emails invitations. See Invitation emails below |
 | `RESET_WORKSPACE` | empty | A phrase. Deletes all data once per phrase and opens the first-administrator setup screen (see above) |
 
 ## Verification
@@ -109,6 +110,17 @@ npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright C
 - open sessions receive live updates, and everything persists across a server restart.
 
 It writes `verify-output/verification-report.md`. The UI walkthrough saves screenshots to `verify-output/screens/`.
+
+## Invitation emails
+
+When `RESEND_API_KEY` and `EMAIL_FROM` are set, adding a person emails them their invitation link, and **New link** and **Email again** in their Team Settings entry email it too. The link is always shown as well, so you can still copy it. If sending fails, the invitation is kept and the error is shown.
+
+The app uses [Resend](https://resend.com) because it sends over HTTPS; Render's free plan blocks the usual mail (SMTP) ports. Resend's free tier covers 3,000 emails a month.
+
+1. Sign up at resend.com.
+2. **Domains → Add domain**, enter your domain (for example `designdimensions.in`), and add the DNS records it lists at your domain registrar. Wait until it shows **Verified**. Until then Resend only delivers to your own address.
+3. **API Keys → Create API key** with *Sending access*. Copy it.
+4. In Render → Environment add `RESEND_API_KEY` (the key) and `EMAIL_FROM`, for example `Design Dimensions Studio <studio@designdimensions.in>`. The address must use the verified domain. Save; Render redeploys.
 
 ## Google sign-in
 

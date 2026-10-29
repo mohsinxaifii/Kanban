@@ -27,11 +27,26 @@ const fakeGoogle = http.createServer((req, res) => {
   });
 }).listen(FAKE_GOOGLE_PORT);
 
+// Stand-in for the Resend email API: records what would have been sent.
+const sentEmails = [];
+const FAKE_EMAIL_PORT = PORT + 600;
+const fakeEmail = http.createServer((req, res) => {
+  let body = '';
+  req.on('data', (c) => { body += c; });
+  req.on('end', () => {
+    const msg = JSON.parse(body);
+    res.setHeader('Content-Type', 'application/json');
+    if (req.headers.authorization !== 'Bearer test-resend' || msg.to[0].endsWith('@bounce.example')) { res.statusCode = 422; return res.end(JSON.stringify({ message: 'Rejected by test server' })); }
+    sentEmails.push(msg);
+    res.end(JSON.stringify({ id: `e${sentEmails.length}` }));
+  });
+}).listen(FAKE_EMAIL_PORT);
+
 function startServer(extraEnv = {}) {
   return new Promise((resolve, reject) => {
     server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
       env: { ...process.env, PORT: String(PORT), DATABASE_PATH: DB, DEMO_MODE: 'true', PUBLIC_URL: BASE, GOOGLE_DRIVE_API_KEY: '', TURSO_DATABASE_URL: '',
-        GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', GOOGLE_TOKEN_URL: `http://localhost:${FAKE_GOOGLE_PORT}/token`, RESET_WORKSPACE: '', ...extraEnv },
+        GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', GOOGLE_TOKEN_URL: `http://localhost:${FAKE_GOOGLE_PORT}/token`, RESET_WORKSPACE: '', RESEND_API_KEY: 'test-resend', EMAIL_FROM: 'Studio <studio@example.com>', RESEND_API_URL: `http://localhost:${FAKE_EMAIL_PORT}/emails`, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     server.stdout.on('data', (d) => { if (String(d).includes('studio on')) resolve(); });
@@ -335,6 +350,15 @@ async function main() {
   expectStatus('Setup cannot be used a second time', await new Client('x').post('/auth/setup', { name: 'X', email: 'x@example.com', password: 'xxxxxxxxxxxx', code: 'fresh start phrase' }), 404);
   r = await fresh.post('/admin/users', { name: 'First Hire', email: 'hire@example.com', role: 'producer' });
   check('The administrator gets an invite link for a new person', r.status === 201 && r.data.invite_url?.includes('#/invite/'));
+  const mail = sentEmails.at(-1);
+  check('The invitation is emailed to the new person with their link', r.data.invite_email?.status === 'sent' && mail?.to[0] === 'hire@example.com' && mail.text.includes(r.data.invite_url) && mail.html.includes('Accept invitation'));
+  const hireId = r.data.id;
+  r = await fresh.post(`/admin/users/${hireId}/reinvite`);
+  check('A new link is emailed too, and the old link stops working', r.data.invite_email?.status === 'sent' && sentEmails.at(-1).text.includes(r.data.invite_url) && !mail.text.includes(r.data.invite_url));
+  expectStatus('The current invitation can be emailed again', await fresh.post(`/admin/users/${hireId}/send-invite`), 200);
+  r = await fresh.post('/admin/users', { name: 'Bad Address', email: 'nobody@bounce.example', role: 'producer' });
+  check('If the email service rejects a message, the invitation still exists and the error is reported', r.status === 201 && r.data.invite_email?.status === 'failed' && r.data.invite_url);
+  check('People who are not admins never get invite emails sent for them', (await new Client('anon').post(`/admin/users/${hireId}/send-invite`)).status === 401);
   await stopServer();
   await startServer({ RESET_WORKSPACE: 'fresh start phrase' });
   const again = new Client('Again');
@@ -350,6 +374,7 @@ async function main() {
   fs.mkdirSync('verify-output', { recursive: true });
   fs.writeFileSync('verify-output/verification-report.md', md.join('\n') + '\n');
   fakeGoogle.close();
+  fakeEmail.close();
   process.exit(failed.length ? 1 : 0);
 }
 

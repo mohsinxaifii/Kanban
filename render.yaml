@@ -33,3 +33,8 @@ services:
       # Optional: Google API key for the Drive link-sharing check.
       - key: GOOGLE_DRIVE_API_KEY
         sync: false
+      # Optional: invitation emails through Resend (README → Invitation emails).
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

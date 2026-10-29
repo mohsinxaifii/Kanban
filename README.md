@@ -2,7 +2,7 @@
 
 Internal creative-production workspace for Design Dimensions: a Linear-style board that shows what the team is making, who is responsible, what needs approval and where work is waiting.
 
-- **Team Board** with filters (client, project, week, creator, approver, action owner, priority, blocked) and drag-and-drop plus an accessible status menu on every card.
+- **Team Board** with filters (client, project, week, creator, approver, action owner, priority, blocked), optional small Drive thumbnails, and drag-and-drop plus an accessible status menu on every card.
 - **My Work**, **Approvals** (sorted by urgency and waiting time), **Weekly Planner** (this week, next week, future weeks, per person) and **Team Settings**.
 - Task side panel with brief, Google Drive submissions, versions, review decisions, comments, approval steps, deadlines, delivery records and full activity history.
 - Separate fields for creator, current action owner, assigned approver(s), delivery owner and final recipient. The creator is never replaced.

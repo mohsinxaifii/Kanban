@@ -13,7 +13,7 @@ export function useMove() {
   };
 }
 
-export function TaskCard({ task, selected, draggable, onDragStart, onDragEnd, dragging }) {
+export function TaskCard({ task, selected, draggable, onDragStart, onDragEnd, dragging, thumbs }) {
   const { openTask, meta } = useApp();
   const move = useMove();
   return (
@@ -35,6 +35,10 @@ export function TaskCard({ task, selected, draggable, onDragStart, onDragEnd, dr
           </span>
         )}
       </div>
+      {thumbs && task.current_submission?.thumbnail_url && (
+        <img className="thumb" src={task.current_submission.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer"
+          onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+      )}
       <div className="card-title">{task.title}</div>
       <div className="card-client">{task.client.name} · {task.project.name}</div>
       <StatusLine task={task} compact />
@@ -53,6 +57,7 @@ export function Board() {
   const { tasks, meta, people } = useApp();
   const move = useMove();
   const [f, setF] = useState({ client: '', project: '', week: '', creator: '', approver: '', owner: '', priority: '', blocked: false, q: '', hideSample: false });
+  const [thumbs, setThumbs] = useState(false);
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -95,6 +100,7 @@ export function Board() {
         {sel('priority', 'Priority', [['urgent', 'Urgent'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}
         <label className={`toggle ${f.blocked ? 'on' : ''}`}><input type="checkbox" checked={f.blocked} onChange={(e) => setF({ ...f, blocked: e.target.checked })} /> Blocked only</label>
         <label className={`toggle ${f.hideSample ? 'on' : ''}`} style={f.hideSample ? { borderColor: 'var(--ink)', color: 'var(--text)', background: '#f7f7f8' } : undefined}><input type="checkbox" checked={f.hideSample} onChange={(e) => setF({ ...f, hideSample: e.target.checked })} /> Hide sample work</label>
+        <label className={`toggle ${thumbs ? 'on' : ''}`} style={thumbs ? { borderColor: 'var(--ink)', color: 'var(--text)', background: '#f7f7f8' } : undefined} title="Small Drive thumbnails load with your own Google account"><input type="checkbox" checked={thumbs} onChange={(e) => setThumbs(e.target.checked)} /> Thumbnails</label>
         {active > 0 && <button className="btn ghost sm" onClick={() => setF({ client: '', project: '', week: '', creator: '', approver: '', owner: '', priority: '', blocked: false, q: '', hideSample: false })}>Clear filters</button>}
         <span style={{ flex: 1 }} />
         <span className="hint">{filtered.length} of {tasks.length} tasks</span>
@@ -116,7 +122,7 @@ export function Board() {
                 </div>
                 <div className="column-body">
                   {items.map((t) => (
-                    <TaskCard key={t.id} task={t} draggable={t.view === 'full'} dragging={drag?.id === t.id}
+                    <TaskCard key={t.id} task={t} thumbs={thumbs} draggable={t.view === 'full'} dragging={drag?.id === t.id}
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDrag(t); }} onDragEnd={() => { setDrag(null); setOver(null); }} />
                   ))}
                   {!items.length && <div className="empty-col">{drag && locked ? lockHelp[s.key] : 'No tasks'}</div>}

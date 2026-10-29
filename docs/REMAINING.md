@@ -20,4 +20,4 @@ The app runs end to end today with its own accounts, database and live updates. 
 
 - Live updates and login rate limiting are held in memory, so the app should run as a single process.
 - Workflow stages and role defaults are defined in code (`server/workflow.js`, `server/permissions.js`). Per-person permissions and per-task approval chains are configurable in the app; editing the stage list itself is not.
-- Asset thumbnails on cards are not shown, to keep the board easy to scan; previews live in the task panel.
+- Card thumbnails are off by default (Thumbnails toggle on the board). They come from Google Drive and only appear for people whose Google account can open the file; sample tasks have no real files, so they show none.

@@ -140,7 +140,7 @@ a:hover { text-decoration: underline; }
 .card-client { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-foot { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11.5px; }
 .card-foot .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card .thumb { height: 64px; border-radius: 6px; background: var(--column); border: 1px solid var(--border); display: grid; place-items: center; color: var(--faint); font-size: 11px; }
+.card .thumb { width: 100%; height: 72px; object-fit: cover; border-radius: 6px; background: var(--column); border: 1px solid var(--border); }
 .due { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .due.overdue { color: var(--blocked); font-weight: 550; }
 .due.today, .due.soon { color: var(--waiting); font-weight: 550; }

@@ -225,7 +225,7 @@ function summarize(user, task, steps, sub, ctx, view) {
     blocked: task.blocked ? { reason: task.blocked_reason, resolver: u(task.blocked_resolver_id), by: u(task.blocked_by_id), at: task.blocked_at } : null,
     next_action: { ...na, user: u(na.user_id) },
     steps: stepStates(steps, sub, task).map((s) => ({ ...s, approver: u(s.approver_id) })),
-    current_submission: sub ? { id: sub.id, version: sub.version, status: sub.status, access_issue: !!sub.access_issue, submitted_at: sub.submitted_at, review_deadline: sub.review_deadline, submitted_by: u(sub.submitted_by) } : null,
+    current_submission: sub ? { id: sub.id, version: sub.version, thumbnail_url: sub.link_kind !== 'folder' && sub.drive_id && !sub.drive_id.startsWith('DEMO-') ? `https://drive.google.com/thumbnail?id=${sub.drive_id}&sz=w400` : null, status: sub.status, access_issue: !!sub.access_issue, submitted_at: sub.submitted_at, review_deadline: sub.review_deadline, submitted_by: u(sub.submitted_by) } : null,
     waiting_since: waitingSince,
   };
 }

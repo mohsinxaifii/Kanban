@@ -5,6 +5,7 @@ import { Avatar } from '../components/ui.jsx';
 const GOOGLE_ERRORS = {
   'no-account': 'There is no studio account for that Google email. Ask an administrator to invite you, then sign in with the invited email.',
   deactivated: 'This account has been deactivated.',
+  pending: 'Your request to join is waiting for an administrator to approve it.',
   'google-off': 'Google sign-in is not set up on this server yet.',
   'google-cancelled': 'Google sign-in was cancelled.',
   'google-state': 'That sign-in link expired. Please try again.',
@@ -125,6 +126,47 @@ function Setup({ onLogin }) {
           {error && <div className="error-text" role="alert">{error}</div>}
           <button className="btn primary" type="submit" style={{ height: 32 }}>Create administrator</button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// The shared team sign-up link. Creates a request only; an administrator approves it.
+export function Join({ token }) {
+  const [state, setState] = useState('loading');
+  const [error, setError] = useState('');
+  const [f, setF] = useState({ name: '', email: '', title: '', password: '' });
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  useEffect(() => { api(`/join/${token}`).then(() => setState('form')).catch((e) => { setError(e.message); setState('invalid'); }); }, [token]);
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    try { await api(`/join/${token}`, { method: 'POST', body: f }); setState('sent'); } catch (err) { setError(err.message); }
+  }
+  return (
+    <div className="auth">
+      <div className="auth-card">
+        <img src="/dd-logo.png" alt="Design Dimensions" />
+        {state === 'invalid' && <><h1>Link not valid</h1><p className="hint">{error}</p><a href="#/board">Go to sign in</a></>}
+        {state === 'sent' && (
+          <div className="stack">
+            <h1>Request sent</h1>
+            <p className="hint" style={{ margin: 0 }}>Thanks, {f.name.split(' ')[0]}. An administrator will review your request and choose what you can access. Once they approve it you can sign in with <b>{f.email}</b> and the password you chose.</p>
+            <a className="btn" href="#/board" style={{ textDecoration: 'none', justifyContent: 'center' }}>Go to sign in</a>
+          </div>
+        )}
+        {state === 'form' && (
+          <form className="stack" onSubmit={submit}>
+            <h1>Join the Design Dimensions studio</h1>
+            <p className="hint" style={{ margin: 0 }}>Tell us who you are. An administrator approves each request before you can sign in.</p>
+            <div className="field"><label htmlFor="j-name">Full name</label><input id="j-name" className="input" autoComplete="name" value={f.name} onChange={set('name')} required /></div>
+            <div className="field"><label htmlFor="j-email">Work email</label><input id="j-email" className="input" type="email" autoComplete="email" value={f.email} onChange={set('email')} required /><span className="hint">Use your Google email if you want to sign in with Google later.</span></div>
+            <div className="field"><label htmlFor="j-title">Designation</label><input id="j-title" className="input" value={f.title} onChange={set('title')} placeholder="e.g. Video Editor, Graphic Designer" required /></div>
+            <div className="field"><label htmlFor="j-pw">Password</label><input id="j-pw" className="input" type="password" minLength={10} autoComplete="new-password" value={f.password} onChange={set('password')} required /><span className="hint">At least 10 characters.</span></div>
+            {error && <div className="error-text" role="alert">{error}</div>}
+            <button className="btn primary" type="submit" style={{ height: 32 }}>Ask to join</button>
+          </form>
+        )}
       </div>
     </div>
   );

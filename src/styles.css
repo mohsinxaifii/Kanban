@@ -407,3 +407,6 @@ select.select { padding-right: 28px; }
 .tour-step { font-size: 11px; color: var(--muted); font-weight: 500; }
 .tour-foot { display: flex; align-items: center; gap: 6px; }
 @media (max-width: 760px) { .tour-card.pointed { left: 16px !important; top: auto !important; bottom: 16px; } }
+.signup-card { display: flex; align-items: center; gap: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 14px 16px; margin-bottom: 18px; }
+.signup-card .hint { margin-top: 2px; }
+@media (max-width: 760px) { .signup-card { flex-direction: column; align-items: stretch; } }

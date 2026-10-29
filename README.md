@@ -10,6 +10,8 @@ Internal creative-production workspace for Design Dimensions: a Linear-style boa
 - Configurable approval chain per task (for example Creative Head → Account Manager). Approvals are tied to the exact version reviewed; a new version always needs fresh approval.
 - Permissions are enforced on the server. Review, approval and delivery stages can only be reached through submissions, approvals and delivery records, so dragging a card cannot skip approval.
 - Live updates: changes made by one person appear for everyone else without refreshing, plus in-app notifications.
+- **Team sign-up link**: one shareable link where people ask to join with their name, email and designation. They get no access until someone who manages users approves them and picks their role, permissions and projects (Team Settings → People).
+- **Export report** (top bar, for people with "See all team work", which administrators and creative heads have by default): a spreadsheet (CSV) of every open task with its stage, how long it has been there, who it is waiting on and for how long, the deadline and whether it is overdue.
 - **Saved**: each person's private folders of tasks and web links. Save a task from its panel; saving never shares or widens access.
 - A short **welcome tour** for every new person on their first sign-in, which they can replay from "Take the tour" in the sidebar.
 
@@ -96,7 +98,7 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 Two scripts start their own server on a fresh temporary database:
 
 ```bash
-npm run verify       # 127 API checks with separate signed-in accounts
+npm run verify       # 153 API checks with separate signed-in accounts
 npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright Chromium, or CHROME_PATH=/path/to/chrome)
 ```
 

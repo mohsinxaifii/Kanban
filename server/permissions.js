@@ -9,7 +9,7 @@ export const PERMISSIONS = [
   { key: 'review.approve', label: 'Approve a review stage', help: 'Can be named as an approver. They only approve the steps they are assigned to on each task.' },
   { key: 'workflow.move', label: 'Move tasks through permitted stages', help: 'Move tasks between Backlog, Planned and In Progress. Review and delivery stages are reached only through submissions, approvals and delivery records.' },
   { key: 'delivery.record', label: 'Record final delivery', help: 'Record delivery on tasks where they are the delivery owner.' },
-  { key: 'work.oversee', label: 'See all team work', help: 'See every task in the projects they can access, not only work they are involved in.' },
+  { key: 'work.oversee', label: 'See all team work', help: 'See every task in the projects they can access, not only work they are involved in, and export the status report.' },
   { key: 'users.manage', label: 'Manage users and permissions', help: 'Invite, update and deactivate people, change roles, permissions and project access, and manage projects.' },
 ];
 export const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);

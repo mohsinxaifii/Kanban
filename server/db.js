@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL,
   permissions TEXT NOT NULL,              -- JSON array of permission keys
   project_access TEXT NOT NULL DEFAULT '"all"', -- JSON: "all" or array of project ids
-  status TEXT NOT NULL DEFAULT 'invited', -- invited | active | deactivated
+  status TEXT NOT NULL DEFAULT 'invited', -- invited | pending (signed up, awaiting approval) | active | deactivated
   password_hash TEXT,
   invite_token TEXT UNIQUE,
   invited_by INTEGER,
@@ -178,6 +178,10 @@ export async function initDb() {
   // Columns added after the first release.
   const cols = (await client.execute('PRAGMA table_info(users)')).rows.map((r) => r[1]);
   if (!cols.includes('tour_done')) await client.execute('ALTER TABLE users ADD COLUMN tour_done INTEGER NOT NULL DEFAULT 0');
+  if (!cols.includes('requested_at')) await client.execute('ALTER TABLE users ADD COLUMN requested_at TEXT'); // self sign-up requests
+  const taskCols = (await client.execute('PRAGMA table_info(tasks)')).rows.map((r) => r[1]);
+  // When the task entered its current stage (null = since it was created).
+  if (!taskCols.includes('stage_entered_at')) await client.execute('ALTER TABLE tasks ADD COLUMN stage_entered_at TEXT');
 }
 
 // Every table that holds workspace data, children first (hosted databases may not

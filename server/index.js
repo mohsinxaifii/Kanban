@@ -11,7 +11,7 @@ import {
 import { parseDriveLink, previewUrl, driveIntegration, checkLinkSharing } from './drive.js';
 import { hashPassword, verifyPassword } from './passwords.js';
 import { googleEnabled, startUrl, finish } from './google.js';
-import { emailEnabled, sendInvite } from './email.js';
+import { emailEnabled, sendInvite, sendSignupNotice, sendApproved } from './email.js';
 import { seedDemo, DEMO_PASSWORD } from './seed.js';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -134,7 +134,7 @@ app.post('/api/auth/login', async (req, res) => {
   const ok = row && row.status === 'active' && !(row.is_demo && !DEMO_MODE) && row.password_hash && (await verifyPassword(str(req.body.password, 200), row.password_hash));
   if (!ok) {
     a.n += 1; loginAttempts.set(key, a);
-    const msg = row?.status === 'deactivated' ? 'This account has been deactivated.' : row?.status === 'invited' ? 'This invitation has not been accepted yet. Use your invite link.' : 'Email or password is incorrect.';
+    const msg = row?.status === 'deactivated' ? 'This account has been deactivated.' : row?.status === 'invited' ? 'This invitation has not been accepted yet. Use your invite link.' : row?.status === 'pending' ? 'Your request to join is waiting for an administrator to approve it.' : 'Email or password is incorrect.';
     return res.status(401).json({ error: msg });
   }
   loginAttempts.delete(key);
@@ -207,6 +207,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
   // Google never creates accounts: the person must have been added in Team settings.
   if (!row || row.is_demo) return loginError(res, 'no-account');
   if (row.status === 'deactivated') return loginError(res, 'deactivated');
+  if (row.status === 'pending') return loginError(res, 'pending');
   if (row.status === 'invited') {
     // Signing in with the invited, Google-verified email accepts the invitation.
     await run("UPDATE users SET status = 'active', invite_token = NULL WHERE id = ?", row.id);
@@ -259,7 +260,7 @@ app.get('/api/meta', auth, async (req, res) => {
 // name never creates anyone.
 app.get('/api/people', auth, async (req, res) => {
   const manage = can(req.user, 'users.manage');
-  const rows = (await all("SELECT * FROM users WHERE status != 'deactivated' ORDER BY name")).map(rowToUser)
+  const rows = (await all("SELECT * FROM users WHERE status IN ('active', 'invited') ORDER BY name")).map(rowToUser)
     .filter((u) => DEMO_MODE || !u.is_demo);
   res.json(rows.map((u) => ({
     ...userRef(u), role: u.role,
@@ -312,6 +313,7 @@ function summarize(task, ctx, view) {
     project: { id: p.id, name: p.name }, client: { id: p.client_id, name: p.client_name },
     creator: u(task.creator_id), assignee: u(task.assignee_id), delivery_owner: u(task.delivery_owner_id), recipient: u(task.recipient_id),
     is_demo: !!task.is_demo, view, updated_at: task.updated_at, created_at: task.created_at, sort_order: task.sort_order,
+    stage_entered_at: task.stage_entered_at || task.created_at,
   };
   if (view === 'deliverable') return { ...base, next_action: { kind: 'done', user: null } };
   return {
@@ -505,7 +507,7 @@ app.post('/api/tasks/:id/move', auth, async (req, res) => {
   checkManualMove(req.user, task, steps, to);
   if (to !== task.stage) {
     await tx(async () => {
-      await run('UPDATE tasks SET stage = ?, sort_order = ?, updated_at = ? WHERE id = ?', to, Date.now(), now(), task.id);
+      await run('UPDATE tasks SET stage = ?, sort_order = ?, updated_at = ?, stage_entered_at = ? WHERE id = ?', to, Date.now(), now(), now(), task.id);
       if (!ACTIVE_STAGES.includes(to) && task.blocked) await run('UPDATE tasks SET blocked = 0 WHERE id = ?', task.id);
       const reopened = task.stage === 'ready_to_deliver' ? ' (reopened: a new version will need fresh approval)' : '';
       await logActivity(task.id, req.user.id, 'moved', `Moved from ${stageLabel(task.stage)} to ${stageLabel(to)}${reopened}`);
@@ -566,7 +568,7 @@ app.post('/api/tasks/:id/submissions', auth, async (req, res) => {
     await run("UPDATE submissions SET status = 'superseded' WHERE task_id = ? AND status = 'in_review'", task.id);
     const r = await run(`INSERT INTO submissions (task_id, version, link, link_kind, drive_id, note, submitted_by, submitted_at, review_deadline, status, current_step)
       VALUES (?,?,?,?,?,?,?,?,?,'in_review',0)`, task.id, version, drive.link, drive.kind, drive.driveId, str(req.body.note, 4000), req.user.id, t, deadline);
-    await run("UPDATE tasks SET stage = 'in_review', blocked = 0, updated_at = ?, sort_order = ? WHERE id = ?", t, Date.now(), task.id);
+    await run("UPDATE tasks SET stage = 'in_review', blocked = 0, updated_at = ?, stage_entered_at = ?, sort_order = ? WHERE id = ?", t, t, Date.now(), task.id);
     const first = steps[0];
     const approver = await getUser(first.approver_id);
     await logActivity(task.id, req.user.id, 'submitted', `Submitted ${version} for review. Waiting for ${approver.name} (${first.label})`);
@@ -615,7 +617,7 @@ app.post('/api/submissions/:id/review', auth, async (req, res) => {
         await notify(submitter.id, task.id, `${req.user.name} approved ${sub.version} of "${task.title}". Now with ${na.name}`, req.user.id);
       } else {
         await run("UPDATE submissions SET status = 'approved' WHERE id = ?", sub.id);
-        await run("UPDATE tasks SET stage = 'ready_to_deliver', sort_order = ?, updated_at = ? WHERE id = ?", Date.now(), t, task.id);
+        await run("UPDATE tasks SET stage = 'ready_to_deliver', sort_order = ?, updated_at = ?, stage_entered_at = ? WHERE id = ?", Date.now(), t, t, task.id);
         const owner = await getUser(task.delivery_owner_id);
         await logActivity(task.id, req.user.id, 'approved', `Approved ${sub.version} (${step.label}). All approvals complete; ready to deliver${owner ? `, handoff by ${owner.name}` : ''}`);
         if (owner) await notify(owner.id, task.id, `"${task.title}" ${sub.version} is approved and ready for you to deliver`, req.user.id);
@@ -623,7 +625,7 @@ app.post('/api/submissions/:id/review', auth, async (req, res) => {
       }
     } else if (decision === 'changes_requested') {
       await run("UPDATE submissions SET status = 'changes_requested' WHERE id = ?", sub.id);
-      await run("UPDATE tasks SET stage = 'changes_requested', sort_order = ?, updated_at = ? WHERE id = ?", Date.now(), t, task.id);
+      await run("UPDATE tasks SET stage = 'changes_requested', sort_order = ?, updated_at = ?, stage_entered_at = ? WHERE id = ?", Date.now(), t, t, task.id);
       await logActivity(task.id, req.user.id, 'changes', `Requested changes on ${sub.version} (${step.label}): ${feedback}`);
       await notify(task.assignee_id || submitter.id, task.id, `${req.user.name} requested changes on ${sub.version} of "${task.title}"`, req.user.id);
     } else {
@@ -692,7 +694,7 @@ app.post('/api/tasks/:id/deliver', auth, async (req, res) => {
     // verified = 0: this is a manual record. Only an automated send confirmed by an integration may set it.
     await run('INSERT INTO deliveries (task_id, submission_id, recipient_id, sender_id, method, note, verified, delivered_at) VALUES (?,?,?,?,?,?,0,?)',
       task.id, sub.id, task.recipient_id, req.user.id, method, str(req.body.note, 2000), t);
-    await run("UPDATE tasks SET stage = 'delivered', blocked = 0, sort_order = ?, updated_at = ? WHERE id = ?", Date.now(), t, task.id);
+    await run("UPDATE tasks SET stage = 'delivered', blocked = 0, sort_order = ?, updated_at = ?, stage_entered_at = ? WHERE id = ?", Date.now(), t, t, task.id);
     await logActivity(task.id, req.user.id, 'delivered', `Recorded manual delivery of ${sub.version} to ${rcpt.name} via ${method}`);
     await notify(rcpt.id, task.id, `${req.user.name} delivered "${task.title}" (${sub.version}) to you`, req.user.id);
     await notify(task.creator_id, task.id, `"${task.title}" was delivered to ${rcpt.name}`, req.user.id);
@@ -709,6 +711,62 @@ app.post('/api/notifications/read', auth, async (req, res) => {
   if (req.body.all) await run('UPDATE notifications SET read = 1 WHERE user_id = ?', req.user.id);
   else if (Number(req.body.id)) await run('UPDATE notifications SET read = 1 WHERE user_id = ? AND id = ?', req.user.id, Number(req.body.id));
   res.json({ ok: true });
+});
+
+// ---------- status report (CSV) ----------
+// For people who oversee the team (administrators and creative heads by default).
+// Lists the tasks they can see, with where each one is, who it is waiting on, for how
+// long, and how it stands against its deadline. Opens in Excel, Numbers or Google Sheets.
+const NEXT_STEP = {
+  start: 'Start work', work: 'Make / finish the work', revise: 'Make requested changes', approve: 'Review and approve',
+  fix_access: 'Fix Drive sharing', deliver: 'Deliver to recipient', blocked: 'Resolve blocker', done: '',
+};
+const csvCell = (v) => {
+  let t = v === null || v === undefined ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`; // stop spreadsheet formula injection
+  return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
+const daysSince = (iso, at) => (iso ? Math.max(0, Math.floor((at - new Date(iso).getTime()) / 864e5)) : '');
+app.get('/api/reports/status.csv', auth, need('work.oversee'), async (req, res) => {
+  const includeDelivered = req.query.delivered === '1';
+  const at = Date.now();
+  const today = new Date(at).toISOString().slice(0, 10);
+  const stageLabel = (k) => STAGES.find((s) => s.key === k)?.label || k;
+  const order = Object.fromEntries(STAGES.map((s, i) => [s.key, i]));
+  const tasks = (await visibleTasks(req.user))
+    .filter((t) => t.view === 'full' && (includeDelivered || t.stage !== 'delivered'))
+    .sort((a, b) => order[a.stage] - order[b.stage] || (a.due_date || '9999').localeCompare(b.due_date || '9999'));
+  const delivered = includeDelivered ? new Map((await all('SELECT task_id, MAX(delivered_at) AS at FROM deliveries GROUP BY task_id')).map((d) => [d.task_id, d.at])) : new Map();
+  const header = ['Task', 'Title', 'Client', 'Project', 'Stage', 'In this stage since', 'Days in this stage', 'Waiting on', 'Next step',
+    'Waiting since', 'Days waiting', 'Deadline', 'Deadline status', 'Blocked', 'Blocked reason', 'Priority', 'Assigned to', 'Approvers',
+    'Current version', 'Delivery owner', 'Recipient', 'Created by', 'Created on', 'Delivered on'];
+  const rows = tasks.map((t) => {
+    const done = t.stage === 'delivered';
+    let deadline = '';
+    if (t.due_date) {
+      const diff = Math.round((new Date(`${t.due_date}T00:00:00Z`) - new Date(`${today}T00:00:00Z`)) / 864e5);
+      if (done) deadline = 'Delivered';
+      else if (diff < 0) deadline = `Overdue by ${-diff} day${diff === -1 ? '' : 's'}`;
+      else if (diff === 0) deadline = 'Due today';
+      else deadline = `Due in ${diff} day${diff === 1 ? '' : 's'}`;
+    } else deadline = done ? 'Delivered' : 'No deadline';
+    const na = t.next_action || {};
+    return [
+      `DD-${t.id}`, t.title, t.client.name, t.project.name, stageLabel(t.stage),
+      t.stage_entered_at.slice(0, 10), daysSince(t.stage_entered_at, at),
+      done ? '' : na.user?.name || 'Nobody assigned', done ? '' : `${NEXT_STEP[na.kind] || ''}${na.step_label ? ` (${na.step_label})` : ''}`,
+      done ? '' : (t.waiting_since || '').slice(0, 10), done ? '' : daysSince(t.waiting_since, at),
+      t.due_date || '', deadline, t.blocked ? 'Yes' : 'No', t.blocked?.reason || '', t.priority,
+      t.assignee?.name || '', (t.steps || []).map((s) => `${s.label}: ${s.approver?.name || '?'}`).join('; '),
+      t.current_submission?.version || '', t.delivery_owner?.name || '', t.recipient?.name || '', t.creator?.name || '',
+      t.created_at.slice(0, 10), (delivered.get(t.id) || '').slice(0, 10),
+    ];
+  });
+  const csv = '﻿' + [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="studio-status-${today}.csv"`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(csv);
 });
 
 // ---------- saved folders (private to each person) ----------
@@ -875,6 +933,7 @@ app.patch('/api/admin/users/:id', auth, need('users.manage'), async (req, res) =
   if ('status' in b) {
     if (!['active', 'deactivated'].includes(b.status)) bad('Unknown status.');
     if (b.status === 'active' && cur.status === 'deactivated') next.status = row.password_hash ? 'active' : 'invited';
+    if (b.status === 'active' && cur.status === 'pending') next.status = 'active'; // approving a sign-up request
     if (b.status === 'deactivated') next.status = 'deactivated';
   }
   await assertAdminRemains(cur.id, next);
@@ -883,8 +942,68 @@ app.patch('/api/admin/users/:id', auth, need('users.manage'), async (req, res) =
       next.name, next.email, next.title, next.role, JSON.stringify(next.permissions), JSON.stringify(next.project_access), next.status, cur.id);
     if (next.status === 'deactivated') await run('DELETE FROM sessions WHERE user_id = ?', cur.id);
   });
+  if (cur.status === 'pending' && next.status === 'active') {
+    await run('UPDATE users SET requested_at = NULL WHERE id = ?', cur.id);
+    sendApproved({ to: next.email, name: next.name, publicUrl: PUBLIC_URL }).catch(() => {});
+  }
   flush();
   res.json(adminView(await one('SELECT * FROM users WHERE id = ?', cur.id)));
+});
+// Declining a sign-up request removes it entirely (nothing else refers to a pending person).
+app.post('/api/admin/users/:id/decline', auth, need('users.manage'), async (req, res) => {
+  const row = await one('SELECT * FROM users WHERE id = ?', Number(req.params.id));
+  if (!row || row.status !== 'pending') bad('Only pending sign-up requests can be declined.');
+  await run('DELETE FROM users WHERE id = ?', row.id);
+  flush();
+  res.json({ ok: true });
+});
+
+// ---------- shared sign-up link ----------
+// One link for anyone. It only creates a request: the person has no permissions and
+// cannot sign in until someone who manages users approves them and picks their access.
+const signupToken = async () => (await one("SELECT value FROM settings WHERE key = 'signup_token'"))?.value || null;
+const signupView = async () => { const t = await signupToken(); return { enabled: !!t, url: t ? `${PUBLIC_URL}/#/join/${t}` : null }; };
+app.get('/api/admin/signup', auth, need('users.manage'), async (req, res) => res.json(await signupView()));
+app.post('/api/admin/signup', auth, need('users.manage'), async (req, res) => {
+  if (req.body.enabled === false) await run("DELETE FROM settings WHERE key = 'signup_token'");
+  else if (req.body.regenerate || !(await signupToken())) {
+    await run("INSERT OR REPLACE INTO settings (key, value) VALUES ('signup_token', ?)", crypto.randomBytes(18).toString('base64url'));
+  }
+  res.json(await signupView());
+});
+const validSignup = async (token) => { const t = await signupToken(); return !!t && typeof token === 'string' && token.length === t.length && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(t)); };
+app.get('/api/join/:token', async (req, res) => {
+  if (!(await validSignup(req.params.token))) return res.status(404).json({ error: 'This sign-up link is not valid any more. Ask the studio for a new one.' });
+  res.json({ ok: true, google: googleEnabled() });
+});
+const joinAttempts = new Map();
+app.post('/api/join/:token', async (req, res) => {
+  if (!(await validSignup(req.params.token))) return res.status(404).json({ error: 'This sign-up link is not valid any more. Ask the studio for a new one.' });
+  const a = joinAttempts.get(req.ip) || { n: 0, t: Date.now() };
+  if (Date.now() - a.t > 60 * 60e3) { a.n = 0; a.t = Date.now(); }
+  if (a.n >= 10) return res.status(429).json({ error: 'Too many sign-ups from this connection. Try again later.' });
+  const name = str(req.body.name, 120);
+  const email = str(req.body.email, 200).toLowerCase();
+  const title = str(req.body.title, 80);
+  const pw = str(req.body.password, 200);
+  if (!name) bad('Enter your name.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad('Enter a valid email address.');
+  if (!title) bad('Enter your designation, for example Video Editor.');
+  if (pw.length < 10) bad('Use at least 10 characters for the password.');
+  const existing = await one('SELECT status FROM users WHERE email = ?', email);
+  if (existing) bad(existing.status === 'pending' ? 'You have already asked to join. An administrator will approve you soon.' : 'An account with this email already exists. Sign in instead.');
+  a.n += 1; joinAttempts.set(req.ip, a);
+  const color = COLORS[(await one('SELECT COUNT(*) AS n FROM users')).n % COLORS.length];
+  const hash = await hashPassword(pw);
+  const id = Number((await run(`INSERT INTO users (name, email, title, role, permissions, project_access, status, password_hash, color, created_at, requested_at)
+    VALUES (?,?,?,'producer','[]','[]','pending',?,?,?,?)`, name, email, title, hash, color, now(), now())).lastInsertRowid);
+  const admins = (await all("SELECT * FROM users WHERE status = 'active'")).map(rowToUser).filter((u) => u.permissions.includes('users.manage') && (DEMO_MODE || !u.is_demo));
+  for (const ad of admins) {
+    await notify(ad.id, null, `${name} (${title}) asked to join. Review the request in Team Settings.`);
+    sendSignupNotice({ to: ad.email, adminName: ad.name, person: { name, email, title }, publicUrl: PUBLIC_URL }).catch(() => {});
+  }
+  flush();
+  res.status(201).json({ id, status: 'pending' });
 });
 app.post('/api/admin/users/:id/reinvite', auth, need('users.manage'), async (req, res) => {
   const row = await one('SELECT * FROM users WHERE id = ?', Number(req.params.id));

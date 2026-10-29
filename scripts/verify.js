@@ -310,6 +310,46 @@ async function main() {
   expectStatus('Tour can be marked as done', await meera.post('/me/tour', { done: true }), 200);
   check('Tour state is remembered for the person', (await meera.get('/auth/me')).data.user.tour_done === 1);
 
+  section('Status report export');
+  r = await fetch(`${BASE}/api/reports/status.csv`, { headers: { Cookie: aanya.cookie } });
+  const csv = await r.text();
+  const lines = csv.trim().split('\r\n');
+  check('Creative Head can export the status report as a spreadsheet', r.status === 200 && r.headers.get('content-type').includes('text/csv') && r.headers.get('content-disposition').includes('.csv'));
+  check('Report has stage, person waited on, days waiting and deadline columns', /Stage,In this stage since,Days in this stage,Waiting on,Next step,Waiting since,Days waiting,Deadline,Deadline status/.test(lines[0]));
+  check('Open-task report leaves out delivered work', !csv.includes('Product launch reel') && lines.length > 3);
+  const winter = lines.find((l) => l.includes('Winter menu posters'));
+  check('Blocked task shows who it is waiting on and the blocker', winter && winter.includes('Resolve blocker') && winter.includes(',Yes,'));
+  r = await fetch(`${BASE}/api/reports/status.csv?delivered=1`, { headers: { Cookie: aanya.cookie } });
+  check('Report can include delivered tasks with their delivery date', (await r.text()).split('\r\n').some((l) => l.includes('Product launch reel') && l.includes('Delivered')));
+  expectStatus('People who do not oversee the team cannot export it', await rohan.get('/reports/status.csv'), 403);
+
+  section('Team sign-up link');
+  expectStatus('Non-admins cannot see or create the sign-up link', await kabir.post('/admin/signup', {}), 403);
+  r = await admin.post('/admin/signup', {});
+  check('Administrator creates one shared sign-up link', r.status === 200 && r.data.enabled && r.data.url.includes('#/join/'));
+  const joinToken = r.data.url.split('/join/')[1];
+  expectStatus('A wrong sign-up link is refused', await new Client('x').get('/join/not-the-token'), 404);
+  const joiner = new Client('Joiner');
+  expectStatus('Designation is required', await joiner.post(`/join/${joinToken}`, { name: 'Tara Gill', email: 'tara@example.com', password: 'tara-password-1' }), 400);
+  r = await joiner.post(`/join/${joinToken}`, { name: 'Tara Gill', email: 'tara@example.com', title: 'Motion Designer', password: 'tara-password-1' });
+  check('Anyone with the link can ask to join with their designation', r.status === 201 && r.data.status === 'pending');
+  const taraId = r.data.id;
+  expectStatus('Signing up twice with the same email is refused', await new Client('y').post(`/join/${joinToken}`, { name: 'Tara', email: 'tara@example.com', title: 'x', password: 'tara-password-1' }), 400);
+  r = await joiner.login('tara@example.com', 'tara-password-1');
+  check('A pending person cannot sign in until approved', r.status === 401 && /waiting/.test(r.data.error));
+  check('Pending people are not offered in people fields', !(await kabir.get('/people')).data.some((p) => p.name === 'Tara Gill'));
+  check('Administrators are notified of the request', (await admin.get('/notifications')).data.some((n) => n.message.includes('Tara Gill (Motion Designer) asked to join')));
+  expectStatus('Non-admins cannot approve requests', await kabir.patch(`/admin/users/${taraId}`, { status: 'active' }), 403);
+  r = await admin.patch(`/admin/users/${taraId}`, { status: 'active', role: 'producer', permissions: ['assets.submit', 'comments.write'], project_access: 'all' });
+  check('Administrator approves with chosen permissions', r.status === 200 && r.data.status === 'active' && r.data.permissions.length === 2 && r.data.title === 'Motion Designer');
+  expectStatus('After approval they sign in with the password they chose', await joiner.login('tara@example.com', 'tara-password-1'), 200);
+  await new Client('z').post(`/join/${joinToken}`, { name: 'Spam Bot', email: 'spam@example.com', title: 'None', password: 'spam-password-1' });
+  const spamId = (await admin.get('/admin/users')).data.find((u) => u.name === 'Spam Bot').id;
+  expectStatus('Administrator can decline a request', await admin.post(`/admin/users/${spamId}/decline`), 200);
+  check('A declined request is removed', !(await admin.get('/admin/users')).data.some((u) => u.name === 'Spam Bot'));
+  await admin.post('/admin/signup', { enabled: false });
+  expectStatus('Turning the link off stops new sign-ups', await new Client('w').get(`/join/${joinToken}`), 404);
+
   section('Persistence across a server restart');
   await stopServer();
   await startServer();

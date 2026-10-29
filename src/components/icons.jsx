@@ -66,5 +66,6 @@ export const Icon = {
   link: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M6.8 9.2a2.6 2.6 0 003.7 0l2-2a2.6 2.6 0 00-3.7-3.7l-.8.8M9.2 6.8a2.6 2.6 0 00-3.7 0l-2 2a2.6 2.6 0 003.7 3.7l.8-.8" /></svg>,
   help: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="8" cy="8" r="6" /><path d="M6.3 6.3a1.8 1.8 0 013.4.7c0 1.2-1.7 1.4-1.7 2.5M8 11.4v.1" /></svg>,
   trash: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9" /></svg>,
+  download: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M8 2.5v8M4.8 7.5L8 10.7l3.2-3.2M2.8 13.5h10.4" /></svg>,
   search: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>,
 };

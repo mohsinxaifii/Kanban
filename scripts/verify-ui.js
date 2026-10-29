@@ -201,6 +201,36 @@ try {
   await admin.getByText('Brand guide').waitFor();
   check('A task and a link can be saved into a folder', (await admin.locator('.saved-row').count()) === 2);
   await shot(admin, 'saved-folders');
+
+  // Team sign-up link: someone joins with their designation and waits for approval.
+  await admin.goto(`${BASE}#/team`);
+  await admin.getByRole('button', { name: 'Create sign-up link' }).click();
+  const joinUrl = await admin.getByLabel('Team sign-up link').inputValue();
+  const outsider = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage();
+  await outsider.goto(joinUrl);
+  await outsider.getByLabel('Full name').fill('Tara Gill');
+  await outsider.getByLabel('Work email').fill('tara@example.com');
+  await outsider.getByLabel('Designation').fill('Motion Designer');
+  await outsider.getByLabel('Password').fill('tara-password-1');
+  await shot(outsider, 'join-form');
+  await outsider.getByRole('button', { name: 'Ask to join' }).click();
+  await outsider.getByText('Request sent').waitFor();
+  await admin.getByText('Requests to join').waitFor();
+  await shot(admin, 'join-request');
+  await admin.getByRole('button', { name: 'Review' }).click();
+  await shot(admin, 'join-review');
+  await admin.getByRole('button', { name: 'Approve with these permissions' }).click();
+  await admin.getByText('Requests to join').waitFor({ state: 'detached' });
+  check('Someone can join with the team link and an admin approves them', (await admin.getByText('Tara Gill').count()) > 0);
+
+  // Export report.
+  await admin.keyboard.press('Escape');
+  await admin.getByRole('button', { name: 'Export report' }).click();
+  await shot(admin, 'export-report');
+  const [download] = await Promise.all([admin.waitForEvent('download'), admin.getByRole('menuitem', { name: 'Open tasks' }).click()]);
+  const csvPath = `${OUT}/status-report.csv`;
+  await download.saveAs(csvPath);
+  check('Export report downloads a spreadsheet of open tasks', fs.readFileSync(csvPath, 'utf8').includes('Waiting on'));
 } catch (e) {
   check('Walkthrough completed without errors', false, e.message);
   for (const c of browser.contexts()) for (const pg of c.pages()) await pg.screenshot({ path: `${OUT}/zz-failure-${++n}.png` }).catch(() => {});

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, fmtDate } from '../api.js';
+import { api, fmtDate, ago } from '../api.js';
 import { useApp, Avatar, Modal, Notice } from '../components/ui.jsx';
 import { Icon } from '../components/icons.jsx';
 
@@ -28,7 +28,8 @@ function People() {
   const load = () => api('/admin/users').then(setUsers).catch((e) => toast(e.message, 'err'));
   useEffect(() => { load(); }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
   const roleLabel = (k) => meta.roles.find((r) => r.key === k)?.label || k;
-  const shown = users.filter((u) => !q || `${u.name} ${u.email}`.toLowerCase().includes(q.toLowerCase()));
+  const requests = users.filter((u) => u.status === 'pending');
+  const shown = users.filter((u) => u.status !== 'pending' && (!q || `${u.name} ${u.email}`.toLowerCase().includes(q.toLowerCase())));
   const projectName = (id) => meta.projects.find((p) => p.id === id)?.name;
   const customised = (u) => {
     const d = meta.roles.find((r) => r.key === u.role)?.permissions || [];
@@ -37,6 +38,26 @@ function People() {
 
   return (
     <>
+      <SignupLink />
+      {requests.length > 0 && (
+        <>
+          <h2 style={{ fontSize: 14, margin: '4px 0 8px' }}>Requests to join <span className="n">{requests.length}</span></h2>
+          <div className="list" style={{ marginBottom: 20 }}>
+            <table className="table">
+              <tbody>
+                {requests.map((u) => (
+                  <tr key={u.id} className="click" onClick={() => setEditing(u)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setEditing(u)}>
+                    <td><span className="person"><Avatar user={u} /> <b style={{ fontWeight: 550 }}>{u.name}</b></span><div className="hint" style={{ marginLeft: 26 }}>{u.title}</div></td>
+                    <td>{u.email}</td>
+                    <td className="hint">Asked {ago(u.requested_at || u.created_at)}</td>
+                    <td style={{ textAlign: 'right' }}><button className="btn sm primary" onClick={(e) => { e.stopPropagation(); setEditing(u); }}>Review</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
       <div className="row" style={{ marginBottom: 12 }}>
         <input className="search" placeholder="Search people" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search people" />
         <span style={{ flex: 1 }} />
@@ -59,13 +80,41 @@ function People() {
           </tbody>
         </table>
       </div>
-      <p className="hint">Only invited people who accept their invitation can sign in; adding someone to a task never creates an account.</p>
+      <p className="hint">Only invited people who accept, and sign-ups you approve, can sign in. Adding someone to a task never creates an account.</p>
       {adding && <PersonModal onClose={() => setAdding(false)} onSaved={(u) => { setAdding(false); load(); setEditing(u); }} />}
-      {editing && <PersonModal user={editing} onClose={() => setEditing(null)} onSaved={(u) => { load(); setEditing(u); }} />}
+      {editing && <PersonModal key={`${editing.id}-${editing.status}`} user={editing} onClose={() => setEditing(null)} onSaved={(u) => { load(); setEditing(u); }} />}
     </>
   );
 }
 
+
+// One shared link anyone can use to ask to join. Requests wait here for approval.
+function SignupLink() {
+  const { toast } = useApp();
+  const [s, setS] = useState(null);
+  useEffect(() => { api('/admin/signup').then(setS).catch(() => {}); }, []);
+  const set = async (body, msg) => { try { setS(await api('/admin/signup', { method: 'POST', body })); toast(msg); } catch (e) { toast(e.message, 'err'); } };
+  if (!s) return null;
+  return (
+    <div className="signup-card">
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <b>Team sign-up link</b>
+        <div className="hint">{s.enabled
+          ? 'Anyone with this link can ask to join by entering their name, email and designation. They get no access until you approve them here.'
+          : 'Turn this on to get one link you can share with the whole team instead of inviting people one by one.'}</div>
+        {s.enabled && (
+          <div className="copy-row" style={{ marginTop: 8 }}>
+            <input className="input" readOnly value={s.url} onFocus={(e) => e.target.select()} aria-label="Team sign-up link" />
+            <button className="btn" onClick={() => { navigator.clipboard?.writeText(s.url); toast('Sign-up link copied'); }}>Copy</button>
+            <button className="btn" onClick={() => window.confirm('Make a new link? The current link stops working.') && set({ regenerate: true }, 'New sign-up link created')}>New link</button>
+            <button className="btn" onClick={() => set({ enabled: false }, 'Sign-up link turned off')}>Turn off</button>
+          </div>
+        )}
+      </div>
+      {!s.enabled && <button className="btn primary" onClick={() => set({ enabled: true }, 'Sign-up link created')}>Create sign-up link</button>}
+    </div>
+  );
+}
 
 function inviteMessage(u) {
   if (u.invite_email?.status === 'sent') return `Invitation emailed to ${u.email}`;
@@ -76,7 +125,10 @@ function inviteMessage(u) {
 function PersonModal({ user, onClose, onSaved }) {
   const { meta, me, toast, reloadAll } = useApp();
   const isNew = !user;
-  const [f, setF] = useState(() => user
+  const pending = user?.status === 'pending';
+  const [f, setF] = useState(() => pending
+    ? { name: user.name, email: user.email, title: user.title, role: 'producer', permissions: meta.roles.find((r) => r.key === 'producer').permissions, project_access: 'all' }
+    : user
     ? { name: user.name, email: user.email, title: user.title, role: user.role, permissions: user.permissions, project_access: user.project_access }
     : { name: '', email: '', title: '', role: 'producer', permissions: meta.roles.find((r) => r.key === 'producer').permissions, project_access: 'all' });
   const roleDefaults = meta.roles.find((r) => r.key === f.role)?.permissions || [];
@@ -95,6 +147,16 @@ function PersonModal({ user, onClose, onSaved }) {
       onSaved(u);
     } catch (e) { toast(e.message, 'err'); }
   }
+  async function approve() {
+    try {
+      const u = await api(`/admin/users/${user.id}`, { method: 'PATCH', body: { ...f, status: 'active' } });
+      toast(`${u.name} approved. They can sign in now.`); reloadAll(); onSaved(u);
+    } catch (e) { toast(e.message, 'err'); }
+  }
+  async function decline() {
+    if (!window.confirm(`Decline ${user.name}'s request? Their sign-up is deleted.`)) return;
+    try { await api(`/admin/users/${user.id}/decline`, { method: 'POST' }); toast('Request declined'); reloadAll(); onClose(); onSaved(null); } catch (e) { toast(e.message, 'err'); }
+  }
   async function setStatus(status) {
     try { const u = await api(`/admin/users/${user.id}`, { method: 'PATCH', body: { status } }); toast(status === 'deactivated' ? `${u.name} deactivated` : `${u.name} reactivated`); reloadAll(); onSaved(u); } catch (e) { toast(e.message, 'err'); }
   }
@@ -110,7 +172,12 @@ function PersonModal({ user, onClose, onSaved }) {
   }
 
   return (
-    <Modal wide title={isNew ? 'Add person' : user.name} onClose={onClose} footer={<>
+    <Modal wide title={isNew ? 'Add person' : pending ? `Request to join: ${user.name}` : user.name} onClose={onClose} footer={pending ? <>
+      <button className="btn danger" onClick={decline}>Decline</button>
+      <span style={{ flex: 1 }} />
+      <button className="btn" onClick={onClose}>Close</button>
+      <button className="btn primary" onClick={approve}>Approve with these permissions</button>
+    </> : <>
       {!isNew && user.id !== me.id && (user.status === 'deactivated'
         ? <button className="btn" onClick={() => setStatus('active')}>Reactivate</button>
         : <button className="btn danger" onClick={() => setStatus('deactivated')}>Deactivate</button>)}
@@ -118,6 +185,7 @@ function PersonModal({ user, onClose, onSaved }) {
       <button className="btn" onClick={onClose}>Close</button>
       <button className="btn primary" onClick={save}>{isNew ? 'Create invitation' : 'Save changes'}</button>
     </>}>
+      {pending && <Notice tone="info">{user.name} signed up with the team link as <b>{user.title}</b>. Choose their role, permissions and projects below, then approve. They cannot sign in until you do.</Notice>}
       {user?.is_demo ? <Notice tone="info">This is a fictional demo account used with the sample work.</Notice> : null}
       {user?.status === 'invited' && user.invite_url && (
         <div className="field"><span className="label">Invite link</span>

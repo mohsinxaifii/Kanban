@@ -46,7 +46,7 @@ export function PersonPicker({
     try {
       const u = await api('/admin/users', { method: 'POST', body: { ...inviting, project_access: projectId ? [Number(projectId)] : 'all' } });
       await reloadPeople();
-      toast(`Invitation created for ${u.name}. Share the invite link from Team settings.`);
+      toast(`Invitation created for ${u.name}. Share the invite link from Settings.`);
       onChange(u.id);
       pop.setOpen(false);
     } catch (err) { toast(err.message, 'err'); }
@@ -90,7 +90,7 @@ export function PersonPicker({
               </div>
             ) : (
               <div className="picker-empty" style={{ borderTop: '1px solid var(--border)' }}>
-                Not in the team yet? Ask an administrator to invite them in Team settings.
+                Not in the team yet? Ask an administrator to invite them in Settings.
               </div>
             )
           )}

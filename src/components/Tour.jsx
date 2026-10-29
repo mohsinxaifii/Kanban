@@ -14,10 +14,12 @@ function buildSteps(me, can) {
     { target: 'board', title: 'Team Board', body: 'Every task by stage, from Backlog to Delivered. Each card says who has to act next. Drag cards between the early stages; review and delivery stages are reached by submitting, approving and recording delivery, so approval can never be skipped.' },
     { target: 'planner', title: 'Weekly Planner', body: 'See what each person has this week, next week and later, so nobody is overloaded and deadlines are visible.' },
     { target: 'saved', title: 'Saved', body: 'Your own folders for tasks and useful links, such as briefs, references or brand guides. Save a task from its panel with the Save button. Only you can see your folders.' },
-    can('users.manage') && { target: 'team', title: 'Team Settings', body: 'Invite people one by one, or share a single team sign-up link. People who use it enter their designation and wait for you to approve them and pick their role, permissions and projects.' },
+    { target: 'settings', title: 'Settings', body: can('users.manage')
+      ? 'Change the theme, text size and text style for yourself. As an administrator you also manage people here: invite them one by one or share a team sign-up link, approve requests, and set roles, permissions and projects.'
+      : 'Change the theme (light or dark), the text size and the text style to suit you.' },
     can('work.oversee') && { target: 'export', title: 'Export report', body: 'Download a spreadsheet of every open task: its stage, who it is waiting on and for how many days, and whether it is on time for its deadline.' },
     { target: 'notifications', title: 'Notifications', body: 'You are told when something needs you: a file to review, changes requested, or a task handed to you. The board also updates live as teammates work.' },
-    { target: 'help', title: 'Need this again?', body: 'Replay the tour any time from here. You can switch between light and dark mode just above.' },
+    { target: 'help', title: 'Need this again?', body: 'Replay the tour any time from here.' },
   ].filter(Boolean);
 }
 

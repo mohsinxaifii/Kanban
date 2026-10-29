@@ -67,5 +67,6 @@ export const Icon = {
   help: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="8" cy="8" r="6" /><path d="M6.3 6.3a1.8 1.8 0 013.4.7c0 1.2-1.7 1.4-1.7 2.5M8 11.4v.1" /></svg>,
   trash: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9" /></svg>,
   download: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M8 2.5v8M4.8 7.5L8 10.7l3.2-3.2M2.8 13.5h10.4" /></svg>,
+  settings: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="8" cy="8" r="2.2" /><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" /></svg>,
   search: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>,
 };

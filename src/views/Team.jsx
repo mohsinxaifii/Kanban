@@ -2,19 +2,25 @@ import { useEffect, useState } from 'react';
 import { api, fmtDate, ago } from '../api.js';
 import { useApp, Avatar, Modal, Notice } from '../components/ui.jsx';
 import { Icon } from '../components/icons.jsx';
+import { Appearance } from './Appearance.jsx';
 
-export function Team() {
-  const [tab, setTab] = useState('people');
+// Settings: Appearance for everyone; people, projects and roles for those who manage users.
+export function Settings() {
+  const { can } = useApp();
+  const manage = can('users.manage');
+  const [tab, setTab] = useState(manage ? 'people' : 'appearance');
+  const tabs = manage ? [['people', 'People'], ['projects', 'Projects'], ['roles', 'Roles and permissions'], ['appearance', 'Appearance']] : [['appearance', 'Appearance']];
   return (
     <div className="page">
       <div className="tabs">
-        {[['people', 'People'], ['projects', 'Projects'], ['roles', 'Roles and permissions']].map(([k, l]) => (
+        {tabs.map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
-      {tab === 'people' && <People />}
-      {tab === 'projects' && <Projects />}
-      {tab === 'roles' && <Roles />}
+      {manage && tab === 'people' && <People />}
+      {manage && tab === 'projects' && <Projects />}
+      {manage && tab === 'roles' && <Roles />}
+      {tab === 'appearance' && <Appearance />}
     </div>
   );
 }
@@ -126,12 +132,22 @@ function PersonModal({ user, onClose, onSaved }) {
   const { meta, me, toast, reloadAll } = useApp();
   const isNew = !user;
   const pending = user?.status === 'pending';
-  const [f, setF] = useState(() => pending
-    ? { name: user.name, email: user.email, title: user.title, role: 'producer', permissions: meta.roles.find((r) => r.key === 'producer').permissions, project_access: 'all' }
-    : user
-    ? { name: user.name, email: user.email, title: user.title, role: user.role, permissions: user.permissions, project_access: user.project_access }
-    : { name: '', email: '', title: '', role: 'producer', permissions: meta.roles.find((r) => r.key === 'producer').permissions, project_access: 'all' });
-  const roleDefaults = meta.roles.find((r) => r.key === f.role)?.permissions || [];
+  const findRole = (title) => meta.roles.find((r) => r.label.toLowerCase() === (title || '').trim().toLowerCase());
+  const producer = meta.roles.find((r) => r.key === 'producer');
+  const [f, setF] = useState(() => {
+    if (pending) {
+      const r = findRole(user.title) || producer;
+      return { name: user.name, email: user.email, title: user.title, role: r.key, permissions: r.permissions, project_access: 'all' };
+    }
+    if (user) return { name: user.name, email: user.email, title: user.title, role: user.role, permissions: user.permissions, project_access: user.project_access };
+    return { name: '', email: '', title: '', role: 'producer', permissions: producer.permissions, project_access: 'all' };
+  });
+  const matched = findRole(f.title);
+  const roleDefaults = matched?.permissions || f.permissions;
+  const setTitle = (title) => {
+    const r = findRole(title);
+    setF(r ? { ...f, title, role: r.key, permissions: r.permissions } : { ...f, title });
+  };
   const differs = [...new Set([...roleDefaults, ...f.permissions])].some((k) => roleDefaults.includes(k) !== f.permissions.includes(k));
   const togglePerm = (k) => setF({ ...f, permissions: f.permissions.includes(k) ? f.permissions.filter((x) => x !== k) : [...f.permissions, k] });
   const toggleProject = (id) => {
@@ -202,19 +218,19 @@ function PersonModal({ user, onClose, onSaved }) {
       <div className="grid2">
         <div className="field"><label htmlFor="pm-name">Name</label><input id="pm-name" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
         <div className="field"><label htmlFor="pm-email">Email</label><input id="pm-email" type="email" className="input" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
-        <div className="field"><label htmlFor="pm-title">Job title</label><input id="pm-title" className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="e.g. Motion Designer" /></div>
-        <div className="field"><label htmlFor="pm-role">Role</label>
-          <div className="row">
-            <select id="pm-role" className="select" value={f.role} onChange={(e) => { const role = e.target.value; setF({ ...f, role, permissions: meta.roles.find((r) => r.key === role).permissions }); }}>
-              {meta.roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-            </select>
-          </div>
-          <span className="hint">Changing the role resets permissions to that role’s defaults.</span>
+        <div className="field" style={{ gridColumn: '1 / -1' }}><label htmlFor="pm-title">Job title (role)</label>
+          <input id="pm-title" className="input" list="role-names" value={f.title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Motion Designer" autoComplete="off" />
+          <datalist id="role-names">{meta.roles.map((r) => <option key={r.key} value={r.label} />)}</datalist>
+          <span className="hint">{!f.title.trim()
+            ? 'Type a job title. Picking an existing one fills in its permissions.'
+            : matched
+              ? `Uses the “${matched.label}” role. Saving stores the permissions below as this role’s permissions for the next person with this title. People who already have it keep their own.`
+              : `“${f.title.trim()}” is a new role. Saving creates it with the permissions below.`}</span>
         </div>
       </div>
       <div className="field">
-        <span className="label">Permissions {differs && <span className="chip waiting" style={{ marginLeft: 6 }}>Differs from role defaults</span>}
-          {differs && <button className="btn ghost sm" style={{ marginLeft: 6 }} onClick={() => setF({ ...f, permissions: roleDefaults })}>Reset to defaults</button>}</span>
+        <span className="label">Permissions {matched && differs && <span className="chip waiting" style={{ marginLeft: 6 }}>Changes the “{matched.label}” role</span>}
+          {matched && differs && <button className="btn ghost sm" style={{ marginLeft: 6 }} onClick={() => setF({ ...f, permissions: roleDefaults })}>Use the role’s current permissions</button>}</span>
         <div className="perm-grid">
           {meta.permissions.map((p) => (
             <label key={p.key} className="checkbox"><input type="checkbox" checked={f.permissions.includes(p.key)} onChange={() => togglePerm(p.key)} />
@@ -263,13 +279,19 @@ function Projects() {
 }
 
 function Roles() {
-  const { meta } = useApp();
+  const { meta, toast, reloadAll } = useApp();
+  const remove = async (r) => {
+    if (!window.confirm(`Delete the “${r.label}” role?`)) return;
+    try { await api(`/admin/roles/${r.key}`, { method: 'DELETE' }); toast('Role deleted'); reloadAll(); } catch (e) { toast(e.message, 'err'); }
+  };
   return (
     <>
-      <p className="lede">Role defaults are a starting point. Each person’s permissions can be adjusted individually. Approval authority is always task-specific: a person approves only the steps they are named on.</p>
-      <div className="list">
+      <p className="lede">Roles are job titles. When you save a person, their job title becomes a role with the permissions you chose, so the next person with that title starts with the same access. You can still adjust each person individually. Approval authority is always task-specific: a person approves only the steps they are named on.</p>
+      <div className="list" style={{ overflowX: 'auto' }}>
         <table className="table matrix">
-          <thead><tr><th>Permission</th>{meta.roles.map((r) => <th key={r.key}>{r.label}</th>)}</tr></thead>
+          <thead><tr><th>Permission</th>{meta.roles.map((r) => (
+            <th key={r.key}>{r.label}{!r.builtin && <button className="icon-btn" style={{ marginLeft: 2, verticalAlign: 'middle' }} title={`Delete ${r.label}`} aria-label={`Delete ${r.label}`} onClick={() => remove(r)}><Icon.trash width={12} height={12} /></button>}</th>
+          ))}</tr></thead>
           <tbody>
             {meta.permissions.map((p) => (
               <tr key={p.key}><td><b style={{ fontWeight: 550 }}>{p.label}</b><div className="hint">{p.help}</div></td>

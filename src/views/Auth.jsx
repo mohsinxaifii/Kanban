@@ -57,7 +57,7 @@ export function Login({ onLogin }) {
         {demo?.enabled && demo.accounts.length > 0 && (
           <div className="demo-box">
             <div className="row"><span className="tag-demo">Demo</span><b>Fictional demo accounts</b></div>
-            <div className="hint">Sample people and sample work for trying the workflow. They are not real accounts and can be removed in Team settings. Password for all: <code>{demo.password}</code></div>
+            <div className="hint">Sample people and sample work for trying the workflow. They are not real accounts and can be removed in Settings. Password for all: <code>{demo.password}</code></div>
             {demo.accounts.map((a, i) => (
               <button key={a.email} className="demo-user" onClick={() => login(null, { email: a.email, password: demo.password })}>
                 <Avatar user={{ name: a.name, color: colors[i % colors.length] }} size="lg" />
@@ -118,7 +118,7 @@ function Setup({ onLogin }) {
         <img src="/dd-logo.png" alt="Design Dimensions" />
         <form className="stack" onSubmit={submit}>
           <h1>Set up your studio</h1>
-          <p className="hint" style={{ margin: 0 }}>The workspace is empty. Create the first administrator account. You can invite everyone else from Team Settings afterwards.</p>
+          <p className="hint" style={{ margin: 0 }}>The workspace is empty. Create the first administrator account. You can invite everyone else from Settings afterwards.</p>
           <div className="field"><label htmlFor="s-name">Your name</label><input id="s-name" className="input" autoComplete="name" value={f.name} onChange={set('name')} required /></div>
           <div className="field"><label htmlFor="s-email">Email</label><input id="s-email" className="input" type="email" autoComplete="username" value={f.email} onChange={set('email')} required /><span className="hint">Use your Google email if you want to sign in with Google later.</span></div>
           <div className="field"><label htmlFor="s-pw">Password</label><input id="s-pw" className="input" type="password" minLength={10} autoComplete="new-password" value={f.password} onChange={set('password')} required /><span className="hint">At least 10 characters.</span></div>

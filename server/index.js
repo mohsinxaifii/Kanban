@@ -204,7 +204,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
   let profile;
   try { profile = await finish(String(req.query.code), PUBLIC_URL, nonce); } catch (e) { return loginError(res, e.message.startsWith('google-') ? e.message : 'google-token'); }
   const row = await one('SELECT * FROM users WHERE email = ?', profile.email);
-  // Google never creates accounts: the person must have been added in Team settings.
+  // Google never creates accounts: the person must have been added in Settings.
   if (!row || row.is_demo) return loginError(res, 'no-account');
   if (row.status === 'deactivated') return loginError(res, 'deactivated');
   if (row.status === 'pending') return loginError(res, 'pending');
@@ -248,10 +248,11 @@ async function visibleProjects(user) {
 app.get('/api/meta', auth, async (req, res) => {
   res.json({
     stages: STAGES, activeStages: ACTIVE_STAGES, manualTargets: MANUAL_TARGETS,
-    permissions: PERMISSIONS, roles: ROLES,
+    permissions: PERMISSIONS, roles: await allRoles(),
     projects: await visibleProjects(req.user),
     driveIntegration: driveIntegration(),
     emailEnabled: emailEnabled(),
+    pendingRequests: can(req.user, 'users.manage') ? (await one("SELECT COUNT(*) AS n FROM users WHERE status = 'pending'")).n : 0,
     demoMode: DEMO_MODE,
   });
 });
@@ -394,7 +395,7 @@ async function checkPerson(id, projectId, roleLabel, perm) {
   if (id === null) return null;
   const p = await getUser(id);
   if (!p || p.status === 'deactivated' || (p.is_demo && !DEMO_MODE)) bad(`${roleLabel}: choose an existing, active person.`);
-  if (!hasProjectAccess(p, projectId)) bad(`${p.name} does not have access to this project. An administrator can grant it in Team settings.`);
+  if (!hasProjectAccess(p, projectId)) bad(`${p.name} does not have access to this project. An administrator can grant it in Settings.`);
   if (perm && !p.permissions.includes(perm)) {
     const label = PERMISSIONS.find((x) => x.key === perm).label;
     bad(`${p.name} cannot be the ${roleLabel.toLowerCase()} because they do not have the "${label}" permission.`);
@@ -888,6 +889,48 @@ async function emailInvite(row, inviter) {
   if (!v.invite_url) return { status: 'not_invited' };
   return sendInvite({ to: row.email, name: row.name, inviter: inviter.name, url: v.invite_url, publicUrl: PUBLIC_URL });
 }
+// ---------- roles ----------
+// Built-in roles plus roles created from job titles. Saving a person whose job title
+// matches a role saves the permissions chosen for them as that role's permissions, so
+// the next person given that title starts with exactly the same access. People who
+// already have the role keep their own permissions.
+async function allRoles() {
+  const rows = await all('SELECT * FROM roles ORDER BY created_at');
+  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const builtIn = ROLES.map((r) => {
+    const o = byKey.get(r.key);
+    return { key: r.key, label: o?.label || r.label, permissions: o ? JSON.parse(o.permissions) : r.permissions, builtin: true };
+  });
+  const custom = rows.filter((r) => !ROLE_KEYS.includes(r.key)).map((r) => ({ key: r.key, label: r.label, permissions: JSON.parse(r.permissions), builtin: false }));
+  return [...builtIn, ...custom];
+}
+async function saveRoleFromTitle(title, permissions) {
+  const roles = await allRoles();
+  const match = roles.find((r) => r.label.toLowerCase() === title.toLowerCase());
+  const perms = JSON.stringify(permissions);
+  if (match) {
+    await run('INSERT INTO roles (key, label, permissions, created_at) VALUES (?,?,?,?) ON CONFLICT(key) DO UPDATE SET permissions = excluded.permissions',
+      match.key, match.label, perms, now());
+    return match.key;
+  }
+  const key = `role_${crypto.randomBytes(6).toString('hex')}`;
+  await run('INSERT INTO roles (key, label, permissions, created_at) VALUES (?,?,?,?)', key, title, perms, now());
+  return key;
+}
+async function roleKeyOr(v, fallback) {
+  return (await allRoles()).some((r) => r.key === v) ? v : fallback;
+}
+app.delete('/api/admin/roles/:key', auth, need('users.manage'), async (req, res) => {
+  const key = req.params.key;
+  if (ROLE_KEYS.includes(key)) bad('Built-in roles cannot be deleted.');
+  if (!(await one('SELECT key FROM roles WHERE key = ?', key))) throw new HttpError(404, 'Role not found.');
+  const used = await one('SELECT COUNT(*) AS n FROM users WHERE role = ?', key);
+  if (used.n) bad(`${used.n} ${used.n === 1 ? 'person has' : 'people have'} this role. Give them another job title first.`);
+  await run('DELETE FROM roles WHERE key = ?', key);
+  flush();
+  res.json({ ok: true });
+});
+
 async function assertAdminRemains(excludingId, nextUser) {
   const admins = (await all("SELECT * FROM users WHERE status = 'active'")).map(rowToUser)
     .map((u) => (u.id === excludingId ? nextUser : u))
@@ -903,13 +946,15 @@ app.post('/api/admin/users', auth, need('users.manage'), async (req, res) => {
   if (!name) bad('Enter their name.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad('Enter a valid email address.');
   if (await one('SELECT id FROM users WHERE email = ?', email)) bad('Someone with that email already exists.');
-  const role = ROLE_KEYS.includes(req.body.role) ? req.body.role : 'producer';
-  const perms = req.body.permissions ? sanitizePerms(req.body.permissions) : roleDefaults(role);
+  let role = await roleKeyOr(req.body.role, 'producer');
+  const title = str(req.body.title, 80);
+  const perms = req.body.permissions ? sanitizePerms(req.body.permissions) : (await allRoles()).find((r) => r.key === role).permissions;
   const access = req.body.project_access === undefined ? 'all' : await sanitizeAccess(req.body.project_access);
+  if (title && req.body.permissions) role = await saveRoleFromTitle(title, perms);
   const token = crypto.randomBytes(24).toString('base64url');
   const color = COLORS[(await one('SELECT COUNT(*) AS n FROM users')).n % COLORS.length];
   const r = await run(`INSERT INTO users (name, email, title, role, permissions, project_access, status, invite_token, invited_by, color, created_at)
-    VALUES (?,?,?,?,?,?,'invited',?,?,?,?)`, name, email, str(req.body.title, 80), role, JSON.stringify(perms), JSON.stringify(access), token, req.user.id, color, now());
+    VALUES (?,?,?,?,?,?,'invited',?,?,?,?)`, name, email, title, role, JSON.stringify(perms), JSON.stringify(access), token, req.user.id, color, now());
   flush();
   const row = await one('SELECT * FROM users WHERE id = ?', Number(r.lastInsertRowid));
   res.status(201).json({ ...adminView(row), invite_email: await emailInvite(row, req.user) });
@@ -927,7 +972,7 @@ app.patch('/api/admin/users/:id', auth, need('users.manage'), async (req, res) =
     if (await one('SELECT id FROM users WHERE email = ? AND id != ?', next.email, cur.id)) bad('Someone else already uses that email.');
   }
   if ('title' in b) next.title = str(b.title, 80);
-  if ('role' in b) { if (!ROLE_KEYS.includes(b.role)) bad('Unknown role.'); next.role = b.role; }
+  if ('role' in b) { if ((await roleKeyOr(b.role, null)) === null) bad('Unknown role.'); next.role = b.role; }
   if ('permissions' in b) next.permissions = sanitizePerms(b.permissions);
   if ('project_access' in b) next.project_access = await sanitizeAccess(b.project_access);
   if ('status' in b) {
@@ -938,6 +983,7 @@ app.patch('/api/admin/users/:id', auth, need('users.manage'), async (req, res) =
   }
   await assertAdminRemains(cur.id, next);
   await tx(async () => {
+    if ('title' in b && 'permissions' in b && next.title) next.role = await saveRoleFromTitle(next.title, next.permissions);
     await run('UPDATE users SET name = ?, email = ?, title = ?, role = ?, permissions = ?, project_access = ?, status = ? WHERE id = ?',
       next.name, next.email, next.title, next.role, JSON.stringify(next.permissions), JSON.stringify(next.project_access), next.status, cur.id);
     if (next.status === 'deactivated') await run('DELETE FROM sessions WHERE user_id = ?', cur.id);
@@ -999,7 +1045,7 @@ app.post('/api/join/:token', async (req, res) => {
     VALUES (?,?,?,'producer','[]','[]','pending',?,?,?,?)`, name, email, title, hash, color, now(), now())).lastInsertRowid);
   const admins = (await all("SELECT * FROM users WHERE status = 'active'")).map(rowToUser).filter((u) => u.permissions.includes('users.manage') && (DEMO_MODE || !u.is_demo));
   for (const ad of admins) {
-    await notify(ad.id, null, `${name} (${title}) asked to join. Review the request in Team Settings.`);
+    await notify(ad.id, null, `${name} (${title}) asked to join. Review the request in Settings.`);
     sendSignupNotice({ to: ad.email, adminName: ad.name, person: { name, email, title }, publicUrl: PUBLIC_URL }).catch(() => {});
   }
   flush();

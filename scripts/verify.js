@@ -323,6 +323,21 @@ async function main() {
   check('Report can include delivered tasks with their delivery date', (await r.text()).split('\r\n').some((l) => l.includes('Product launch reel') && l.includes('Delivered')));
   expectStatus('People who do not oversee the team cannot export it', await rohan.get('/reports/status.csv'), 403);
 
+  section('Job titles become roles');
+  r = await admin.post('/admin/users', { name: 'Ira Motion', email: 'ira@example.com', title: 'Motion Designer', permissions: ['assets.submit', 'comments.write', 'workflow.move'], project_access: 'all' });
+  let roles = (await admin.get('/meta')).data.roles;
+  const motion = roles.find((x) => x.label === 'Motion Designer');
+  check('Saving a person with a new job title creates a role with exactly their permissions', r.status === 201 && motion && motion.permissions.join() === 'assets.submit,comments.write,workflow.move' && r.data.role === motion.key);
+  r = await admin.post('/admin/users', { name: 'Omar Motion', email: 'omar@example.com', title: 'motion designer', role: motion.key, project_access: 'all' });
+  check('The next person with that title starts with the same permissions', r.data.role === motion.key && r.data.permissions.join() === 'assets.submit,comments.write,workflow.move');
+  const omarId = r.data.id;
+  r = await admin.patch(`/admin/users/${omarId}`, { title: 'Motion Designer', permissions: ['assets.submit'] });
+  roles = (await admin.get('/meta')).data.roles;
+  check('Saving with changed permissions updates the role for future people', roles.find((x) => x.key === motion.key).permissions.join() === 'assets.submit');
+  check('People who already had the role keep their own permissions', (await admin.get('/admin/users')).data.find((u) => u.name === 'Ira Motion').permissions.length === 3);
+  expectStatus('A role still in use cannot be deleted', await admin.req('DELETE', `/admin/roles/${motion.key}`), 400);
+  expectStatus('Built-in roles cannot be deleted', await admin.req('DELETE', '/admin/roles/producer'), 400);
+
   section('Team sign-up link');
   expectStatus('Non-admins cannot see or create the sign-up link', await kabir.post('/admin/signup', {}), 403);
   r = await admin.post('/admin/signup', {});

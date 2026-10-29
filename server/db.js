@@ -161,6 +161,14 @@ CREATE TABLE IF NOT EXISTS saved_items (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_saved_user ON saved_items(user_id, folder_id);
+-- Roles named after job titles, with the permissions last saved for that title.
+-- A row with a built-in key (admin, producer…) overrides that role's defaults.
+CREATE TABLE IF NOT EXISTS roles (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  permissions TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_steps_task ON approval_steps(task_id, position);
 CREATE INDEX IF NOT EXISTS idx_subs_task ON submissions(task_id);
@@ -187,7 +195,7 @@ export async function initDb() {
 // Every table that holds workspace data, children first (hosted databases may not
 // enforce ON DELETE CASCADE).
 export const DATA_TABLES = ['reviews', 'deliveries', 'submissions', 'approval_steps', 'comments', 'activity', 'notifications',
-  'saved_items', 'saved_folders', 'tasks', 'sessions', 'users', 'projects', 'clients'];
+  'saved_items', 'saved_folders', 'tasks', 'sessions', 'users', 'projects', 'clients', 'roles'];
 
 export const now = () => new Date().toISOString();
 

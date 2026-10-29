@@ -174,7 +174,7 @@ try {
   check('Meera opening the task link gets "Task not found"', /Task not found/.test(await meera.locator('.panel').innerText()));
 
   const admin = await as('studio');
-  await admin.goto(`${BASE}#/team`);
+  await admin.goto(`${BASE}#/settings`);
   await admin.getByText('Kabir Sethi').first().waitFor();
   await shot(admin, 'admin-team');
   await admin.getByText('Kabir Sethi').first().click();
@@ -203,7 +203,7 @@ try {
   await shot(admin, 'saved-folders');
 
   // Team sign-up link: someone joins with their designation and waits for approval.
-  await admin.goto(`${BASE}#/team`);
+  await admin.goto(`${BASE}#/settings`);
   await admin.getByRole('button', { name: 'Create sign-up link' }).click();
   const joinUrl = await admin.getByLabel('Team sign-up link').inputValue();
   const outsider = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage();
@@ -222,6 +222,19 @@ try {
   await admin.getByRole('button', { name: 'Approve with these permissions' }).click();
   await admin.getByText('Requests to join').waitFor({ state: 'detached' });
   check('Someone can join with the team link and an admin approves them', (await admin.getByText('Tara Gill').count()) > 0);
+
+  // Settings → Appearance: theme, text size and style apply immediately.
+  await admin.keyboard.press('Escape');
+  await admin.getByRole('button', { name: 'Appearance' }).click();
+  await admin.getByRole('button', { name: /^Dark/ }).click();
+  await admin.getByRole('button', { name: /^Large/ }).click();
+  await admin.getByRole('button', { name: /Serif/ }).click();
+  const look = await admin.evaluate(() => ({ theme: document.documentElement.dataset.theme, font: getComputedStyle(document.body).fontFamily, size: getComputedStyle(document.body).fontSize }));
+  check('Appearance settings change theme, text size and text style', look.theme === 'dark' && /serif/i.test(look.font) && parseFloat(look.size) > 13.5, JSON.stringify(look));
+  await shot(admin, 'settings-appearance');
+  await admin.getByRole('button', { name: /^Light/ }).click();
+  await admin.getByRole('button', { name: /^Default/ }).click();
+  await admin.getByRole('button', { name: /Inter/ }).click();
 
   // Export report.
   await admin.keyboard.press('Escape');

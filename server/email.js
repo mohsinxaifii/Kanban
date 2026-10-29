@@ -31,12 +31,12 @@ This link is just for you (${to}) and works once. If you were not expecting it, 
 
 // A short notice to an administrator that someone used the sign-up link.
 export async function sendSignupNotice({ to, adminName, person, publicUrl }) {
-  const url = `${publicUrl}/#/team`;
+  const url = `${publicUrl}/#/settings`;
   const text = `Hi ${adminName.split(' ')[0]},
 
 ${person.name} (${person.email}) asked to join the Design Dimensions studio as "${person.title}".
 
-They cannot sign in until you approve them. Review the request and choose their role and permissions in Team Settings:
+They cannot sign in until you approve them. Review the request and choose their role and permissions in Settings:
 ${url}`;
   const html = `<div style="font-family:-apple-system,Segoe UI,Inter,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1f;max-width:520px">
   <p>Hi ${esc(adminName.split(' ')[0])},</p>

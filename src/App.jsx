@@ -2,19 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ago } from './api.js';
 import { AppCtx, Avatar, usePopover } from './components/ui.jsx';
 import { Icon } from './components/icons.jsx';
-import { getPreference, setPreference } from './theme.js';
 import { Login, AcceptInvite, Join } from './views/Auth.jsx';
 import { Board } from './views/Board.jsx';
 import { MyWork } from './views/MyWork.jsx';
 import { Planner } from './views/Planner.jsx';
 import { Approvals } from './views/Approvals.jsx';
-import { Team } from './views/Team.jsx';
+import { Settings } from './views/Team.jsx';
 import { TaskPanel } from './views/TaskPanel.jsx';
 import { NewTask } from './views/NewTask.jsx';
 import { Saved } from './views/Saved.jsx';
 import { Tour } from './components/Tour.jsx';
 
-// Hash routes: #/join/<token> (team sign-up link), #/board, #/my-work, #/planner, #/approvals, #/saved, #/team, #/invite/<token>; ?task=<id> opens the panel.
+// Hash routes: #/join/<token> (team sign-up link), #/board, #/my-work, #/planner, #/approvals, #/saved, #/settings (old #/team still works), #/invite/<token>; ?task=<id> opens the panel.
 function parseHash() {
   const h = window.location.hash.replace(/^#/, '') || '/board';
   const [path, query = ''] = h.split('?');
@@ -104,6 +103,7 @@ function Workspace({ me, setMe, route }) {
   if (!meta) return null;
   const taskId = Number(route.params.get('task')) || null;
   const myActions = tasks.filter((t) => t.next_action?.user?.id === me.id && t.view === 'full').length;
+  const requests = meta.pendingRequests || 0;
   const myApprovals = tasks.filter((t) => t.next_action?.kind === 'approve' && t.next_action.user?.id === me.id).length;
 
   const views = {
@@ -112,9 +112,9 @@ function Workspace({ me, setMe, route }) {
     '/planner': { title: 'Weekly Planner', el: <Planner /> },
     '/approvals': { title: 'Approvals', el: <Approvals /> },
     '/saved': { title: 'Saved', el: <Saved /> },
-    '/team': { title: 'Team Settings', el: <Team /> },
+    '/settings': { title: 'Settings', el: <Settings /> },
   };
-  const view = views[route.path] || views['/board'];
+  const view = views[route.path === '/team' ? '/settings' : route.path] || views['/board'];
 
   return (
     <AppCtx.Provider value={ctx}>
@@ -134,9 +134,8 @@ function Workspace({ me, setMe, route }) {
           <NavItem tour="planner" path="/planner" route={route} icon={Icon.calendar} label="Weekly Planner" />
           <NavItem tour="saved" path="/saved" route={route} icon={Icon.bookmark} label="Saved" />
           <div className="sidebar-spacer" />
-          <ThemeSwitch />
           <button className="nav-item" data-tour="help" onClick={() => setTouring(true)}><Icon.help /> Take the tour</button>
-          {ctx.can('users.manage') && <NavItem tour="team" path="/team" route={route} icon={Icon.team} label="Team Settings" />}
+          <NavItem tour="settings" path="/settings" route={route} icon={Icon.settings} label="Settings" count={requests} hot={requests > 0} />
           <Notifications items={notifications} reload={reloadNotifications} openTask={openTask} canManage={ctx.can('users.manage')} />
           <div className="me">
             <Avatar user={me} size="lg" />
@@ -147,14 +146,14 @@ function Workspace({ me, setMe, route }) {
         <main className="main">
           <div className="topbar">
             <h1>{view.title}</h1>
-            <select className="mobile-nav select" aria-label="Go to view" value={route.path} onChange={(e) => go(e.target.value)}>
-              {Object.entries(views).filter(([k]) => k !== '/team' || ctx.can('users.manage')).map(([k, v]) => <option key={k} value={k}>{v.title}</option>)}
+            <select className="mobile-nav select" aria-label="Go to view" value={route.path === '/team' ? '/settings' : route.path} onChange={(e) => go(e.target.value)}>
+              {Object.entries(views).map(([k, v]) => <option key={k} value={k}>{v.title}</option>)}
             </select>
             <span className="grow" />
             {ctx.can('work.oversee') && <ExportReport />}
             <LiveDot />
           </div>
-          <div className="content">{route.path === '/team' && !ctx.can('users.manage') ? <div className="page">You do not have access to Team settings.</div> : view.el}</div>
+          <div className="content">{view.el}</div>
         </main>
       </div>
       {taskId && <TaskPanel id={taskId} onClose={() => openTask(null)} />}
@@ -166,22 +165,11 @@ function Workspace({ me, setMe, route }) {
 }
 
 function NavItem({ path, route, icon: I, label, count, hot, tour }) {
-  const active = route.path === path || (path === '/board' && !['/my-work', '/planner', '/approvals', '/saved', '/team'].includes(route.path));
+  const active = route.path === path || (path === '/settings' && route.path === '/team') || (path === '/board' && !['/my-work', '/planner', '/approvals', '/saved', '/team', '/settings'].includes(route.path));
   return (
     <a data-tour={tour} className={`nav-item ${active ? 'active' : ''}`} href={`#${path}`} aria-current={active ? 'page' : undefined}>
       <I /> {label} {count > 0 && <span className={`count ${hot ? 'hot' : ''}`}>{count}</span>}
     </a>
-  );
-}
-
-function ThemeSwitch() {
-  const [pref, setPref] = useState(getPreference);
-  return (
-    <div className="theme-switch" role="group" aria-label="Theme">
-      {[['light', 'Light'], ['dark', 'Dark'], ['system', 'System']].map(([k, l]) => (
-        <button key={k} aria-pressed={pref === k} onClick={() => { setPreference(k); setPref(k); }}>{l}</button>
-      ))}
-    </div>
   );
 }
 
@@ -226,7 +214,7 @@ function Notifications({ items, reload, openTask, canManage }) {
           {!items.length && <div className="picker-empty">Nothing yet.</div>}
           {items.map((n) => (
             <div key={n.id} className={`notif ${n.read ? 'read' : 'unread'}`} role="button" tabIndex={0}
-              onClick={async () => { await api('/notifications/read', { method: 'POST', body: { id: n.id } }); reload(); pop.setOpen(false); if (n.task_id) openTask(n.task_id); else if (canManage && n.message.includes('asked to join')) go('/team'); }}>
+              onClick={async () => { await api('/notifications/read', { method: 'POST', body: { id: n.id } }); reload(); pop.setOpen(false); if (n.task_id) openTask(n.task_id); else if (canManage && n.message.includes('asked to join')) go('/settings'); }}>
               <span>{n.message}</span><time>{ago(n.created_at)}</time>
             </div>
           ))}

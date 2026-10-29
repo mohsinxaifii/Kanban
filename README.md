@@ -3,14 +3,15 @@
 Internal creative-production workspace for Design Dimensions: a Linear-style board that shows what the team is making, who is responsible, what needs approval and where work is waiting.
 
 - **Team Board** with filters (client, project, week, creator, approver, action owner, priority, blocked), optional small Drive thumbnails, and drag-and-drop plus an accessible status menu on every card.
-- **My Work**, **Approvals** (sorted by urgency and waiting time), **Weekly Planner** (this week, next week, future weeks, per person) and **Team Settings**.
+- **My Work**, **Approvals** (sorted by urgency and waiting time), **Weekly Planner** (this week, next week, future weeks, per person) and **Settings**.
 - Task side panel with brief, Google Drive submissions, versions, review decisions, comments, approval steps, deadlines, delivery records and full activity history.
 - Separate fields for creator, current action owner, assigned approver(s), delivery owner and final recipient. The creator is never replaced.
 - Workflow: Backlog → Planned → In Progress → In Review → Changes Requested → Ready to Deliver → Delivered, with a Blocked flag (reason + person needed) on any active stage.
 - Configurable approval chain per task (for example Creative Head → Account Manager). Approvals are tied to the exact version reviewed; a new version always needs fresh approval.
 - Permissions are enforced on the server. Review, approval and delivery stages can only be reached through submissions, approvals and delivery records, so dragging a card cannot skip approval.
 - Live updates: changes made by one person appear for everyone else without refreshing, plus in-app notifications.
-- **Team sign-up link**: one shareable link where people ask to join with their name, email and designation. They get no access until someone who manages users approves them and picks their role, permissions and projects (Team Settings → People).
+- **Job titles are roles**: when you save a person, their job title becomes a role with exactly the permissions you chose, and the next person given that title starts with the same permissions (Settings → Roles and permissions lists them).
+- **Team sign-up link**: one shareable link where people ask to join with their name, email and designation. They get no access until someone who manages users approves them and picks their role, permissions and projects (Settings → People).
 - **Export report** (top bar, for people with "See all team work", which administrators and creative heads have by default): a spreadsheet (CSV) of every open task with its stage, how long it has been there, who it is waiting on and for how long, the deadline and whether it is overdue.
 - **Saved**: each person's private folders of tasks and web links. Save a task from its panel; saving never shares or widens access.
 - A short **welcome tour** for every new person on their first sign-in, which they can replay from "Take the tour" in the sidebar.
@@ -21,7 +22,7 @@ Internal creative-production workspace for Design Dimensions: a Linear-style boa
 - React 18 + Vite front end, Inter typeface (bundled)
 - Server-Sent Events for live updates
 - Sign in with Google or with email and password (scrypt hashes, HttpOnly session cookies); invitation links for new people
-- Light, dark and system themes (switch at the bottom of the sidebar)
+- Settings → Appearance: light, dark or system theme, four text sizes and four text styles (saved per device)
 
 ## Run it locally
 
@@ -61,7 +62,7 @@ To delete every person, task, project and saved item and start fresh (for exampl
 1. In Render → your service → **Environment**, add `RESET_WORKSPACE` with a phrase only you know (for example `fresh-start-oct-2026`), and save. Render redeploys.
 2. On start the server deletes everything once for that phrase. The demo data does not come back.
 3. Open the site. It shows **Set up your studio**: enter your name, email, a password and the same phrase. You are signed in as the administrator.
-4. Go to **Team Settings → People → Add person** for each teammate; each one gives you an invite link to send them.
+4. Go to **Settings → People → Add person** for each teammate; each one gives you an invite link to send them.
 
 Leaving `RESET_WORKSPACE` in place is safe: the same phrase never wipes twice. Changing it to a new phrase wipes again, so delete the variable once you are set up.
 
@@ -71,9 +72,9 @@ Leaving `RESET_WORKSPACE` in place is safe: the same phrase never wipes twice. C
    ```bash
    npm run create-admin -- "Your Name" you@designdimensions.com
    ```
-2. Sign in as that administrator, open **Team Settings → People → Add person** and invite the team. Each invite produces a link; email sending is not configured yet, so send the link yourself. People get access only after accepting.
-3. Add your real clients and projects in **Team Settings → Projects**.
-4. Remove the sample people and work in **Team Settings → Demo data**, and set `DEMO_MODE=false` so they are not seeded into a new database.
+2. Sign in as that administrator, open **Settings → People → Add person** and invite the team. Each invite produces a link; email sending is not configured yet, so send the link yourself. People get access only after accepting.
+3. Add your real clients and projects in **Settings → Projects**.
+4. Remove the sample people and work in **Settings → Demo data**, and set `DEMO_MODE=false` so they are not seeded into a new database.
 
 ## Configuration
 
@@ -98,7 +99,7 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 Two scripts start their own server on a fresh temporary database:
 
 ```bash
-npm run verify       # 153 API checks with separate signed-in accounts
+npm run verify       # 159 API checks with separate signed-in accounts
 npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright Chromium, or CHROME_PATH=/path/to/chrome)
 ```
 
@@ -115,7 +116,7 @@ It writes `verify-output/verification-report.md`. The UI walkthrough saves scree
 
 ## Invitation emails
 
-When `RESEND_API_KEY` and `EMAIL_FROM` are set, adding a person emails them their invitation link, and **New link** and **Email again** in their Team Settings entry email it too. The link is always shown as well, so you can still copy it. If sending fails, the invitation is kept and the error is shown.
+When `RESEND_API_KEY` and `EMAIL_FROM` are set, adding a person emails them their invitation link, and **New link** and **Email again** in their Settings entry email it too. The link is always shown as well, so you can still copy it. If sending fails, the invitation is kept and the error is shown.
 
 The app uses [Resend](https://resend.com) because it sends over HTTPS; Render's free plan blocks the usual mail (SMTP) ports. Resend's free tier covers 3,000 emails a month.
 
@@ -126,7 +127,7 @@ The app uses [Resend](https://resend.com) because it sends over HTTPS; Render's 
 
 ## Google sign-in
 
-“Continue with Google” appears on the sign-in and invitation pages once `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. Google only proves who someone is: the email must already belong to someone added in Team Settings. An invited person who signs in with Google using the invited email is activated; anyone else is turned away, and no account is ever created from a Google sign-in. Demo accounts cannot use Google.
+“Continue with Google” appears on the sign-in and invitation pages once `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. Google only proves who someone is: the email must already belong to someone added in Settings. An invited person who signs in with Google using the invited email is activated; anyone else is turned away, and no account is ever created from a Google sign-in. Demo accounts cannot use Google.
 
 To create the credentials:
 
@@ -156,7 +157,7 @@ Render's free web services have no persistent disk, so the database lives in [Tu
    ```bash
    TURSO_DATABASE_URL=libsql://… TURSO_AUTH_TOKEN=… npm run create-admin -- "Your Name" you@designdimensions.com
    ```
-5. Before adding real clients, set `DEMO_MODE=false` in the service's **Environment** tab. Demo accounts then stop signing in and the login page no longer lists them. Remove the sample work in Team Settings → Demo data.
+5. Before adding real clients, set `DEMO_MODE=false` in the service's **Environment** tab. Demo accounts then stop signing in and the login page no longer lists them. Remove the sample work in Settings → Demo data.
 
 Free-plan behaviour to expect: the service sleeps after about 15 minutes without visits and takes roughly 30–60 seconds to wake on the next visit. Live updates reconnect automatically. Data is safe in Turso throughout. Check current free-tier limits on both services when you sign up.
 

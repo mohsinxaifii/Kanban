@@ -1,0 +1,29 @@
+# Render Blueprint: New > Blueprint in the Render dashboard, then pick this repo.
+services:
+  - type: web
+    name: design-dimensions-studio
+    runtime: node
+    plan: starter            # a persistent disk needs a paid instance; free instances lose data on every deploy
+    region: singapore
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: studio-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22.13.1"
+      - key: DATABASE_PATH
+        value: /var/data/studio.db
+      # Demo people and sample work for trying the app. Set to "false" before adding real
+      # clients: demo accounts then stop working and the login page stops listing them.
+      - key: DEMO_MODE
+        value: "true"
+      - key: DEMO_PASSWORD
+        value: demo-studio-2026
+      # Optional: Google API key for the Drive link-sharing check.
+      - key: GOOGLE_DRIVE_API_KEY
+        sync: false

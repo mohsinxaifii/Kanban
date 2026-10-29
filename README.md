@@ -68,7 +68,7 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 | `PORT` | `3000` | Port to listen on |
 | `PUBLIC_URL` | `http://localhost:3000` | Used in invite links. An `https://` URL also marks cookies `Secure` |
 | `DATABASE_PATH` | `./data/studio.db` | SQLite file. Must be on persistent storage in production |
-| `DEMO_MODE` | `true` | Seed the demo workspace once per database |
+| `DEMO_MODE` | `true` | Seed the demo workspace once per database. When `false`, demo accounts cannot sign in |
 | `DEMO_PASSWORD` | `demo-studio-2026` | Password for demo accounts |
 | `GOOGLE_DRIVE_API_KEY` | empty | Optional. See Google Drive below |
 
@@ -101,6 +101,20 @@ App permissions and Google Drive permissions are separate. Naming a reviewer in 
 - Previews use Google's embed URLs and load with the viewer's own Google session, so they show whether *you* can open it.
 
 ## Deploying
+
+### Render (recommended)
+
+The repo includes a `render.yaml` Blueprint: a Node web service on the Starter plan with a 1 GB persistent disk for the database.
+
+1. In the Render dashboard choose **New → Blueprint** and connect this GitHub repository.
+2. Review the plan (Starter, about $7/month plus the disk) and click **Apply**. The first build takes a few minutes.
+3. Open the `onrender.com` URL. Invite links use Render's address automatically; set `PUBLIC_URL` if you add a custom domain.
+4. Create your real administrator from the service's **Shell** tab: `npm run create-admin -- "Your Name" you@designdimensions.com`.
+5. Before adding real clients, set `DEMO_MODE=false` in **Environment**. Demo accounts then stop signing in and the login page no longer lists them. Remove the sample work in Team Settings → Demo data.
+
+A free instance would work for a quick look, but it has no persistent disk, so all data is lost on each deploy or restart.
+
+### Other hosts
 
 Any host that runs a Node.js process with a persistent disk works (Render, Railway, Fly.io, a small VM). A `Dockerfile` is included:
 

@@ -16,7 +16,8 @@ const PORT = Number(process.env.PORT || 3000);
 const DEMO_MODE = (process.env.DEMO_MODE ?? 'true') !== 'false';
 const COOKIE = 'dd_session';
 const SESSION_DAYS = 14;
-const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
+// Render provides RENDER_EXTERNAL_URL automatically.
+const PUBLIC_URL = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 
 if (DEMO_MODE) seedDemo();
 
@@ -87,6 +88,7 @@ function sessionUser(req) {
   if (!s || s.expires_at < now()) return null;
   const u = getUser(s.user_id);
   if (!u || u.status !== 'active') return null;
+  if (u.is_demo && !DEMO_MODE) return null; // demo accounts stop working once demo mode is off
   return u;
 }
 // Mutating requests must come from our own front end (blocks cross-site form posts).
@@ -112,7 +114,7 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   if (Date.now() - a.t > 15 * 60e3) { a.n = 0; a.t = Date.now(); }
   if (a.n >= 10) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
   const row = one('SELECT * FROM users WHERE email = ?', email);
-  const ok = row && row.status === 'active' && row.password_hash && (await verifyPassword(str(req.body.password, 200), row.password_hash));
+  const ok = row && row.status === 'active' && !(row.is_demo && !DEMO_MODE) && row.password_hash && (await verifyPassword(str(req.body.password, 200), row.password_hash));
   if (!ok) {
     a.n += 1; loginAttempts.set(key, a);
     const msg = row?.status === 'deactivated' ? 'This account has been deactivated.' : row?.status === 'invited' ? 'This invitation has not been accepted yet. Use your invite link.' : 'Email or password is incorrect.';

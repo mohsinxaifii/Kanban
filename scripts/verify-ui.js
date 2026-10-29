@@ -32,8 +32,29 @@ async function as(name) {
   await page.fill('#pw', PW);
   await page.click('button[type=submit]');
   await page.waitForSelector('.sidebar');
+  // Every new person gets the welcome tour once. The first one is walked through; the rest skip it.
+  await page.waitForSelector('.tour-card');
+  if (!toured) {
+    toured = true;
+    await shot(page, 'tour-welcome');
+    let steps = 0;
+    while (await page.locator('.tour-card').count()) {
+      if (steps === 2) await shot(page, 'tour-step');
+      await page.locator('.tour-card .btn.primary').click();
+      await page.waitForTimeout(200);
+      steps += 1;
+      if (steps > 15) break;
+    }
+    check('New people get a step-by-step welcome tour that can be finished', steps >= 6 && !(await page.locator('.tour').count()), `steps ${steps}`);
+    await page.reload(); await page.waitForSelector('.sidebar'); await page.waitForTimeout(500);
+    check('The tour does not reappear once finished', !(await page.locator('.tour').count()));
+  } else {
+    await page.getByRole('button', { name: 'Skip tour' }).click();
+    await page.locator('.tour').waitFor({ state: 'detached' });
+  }
   return page;
 }
+let toured = false;
 const shot = async (page, label) => { await page.waitForTimeout(350); return page.screenshot({ path: `${OUT}/${String(++n).padStart(2, '0')}-${label}.png` }); };
 async function pick(page, buttonLabel, text) {
   await page.getByRole('button', { name: new RegExp(`^${buttonLabel}`) }).click();
@@ -165,6 +186,21 @@ try {
   await admin.goto(`${BASE}#/board`);
   await admin.waitForSelector('.card');
   await shot(admin, 'admin-board');
+
+  // Saved folders: save a task from its panel into a new folder, add a link, see both.
+  await admin.locator('.card').first().click();
+  await admin.getByRole('button', { name: 'Save', exact: true }).click();
+  await admin.getByLabel('New folder name').fill('Client refs');
+  await admin.getByRole('button', { name: 'Add', exact: true }).click();
+  await admin.getByRole('button', { name: 'Saved', exact: true }).waitFor();
+  await admin.keyboard.press('Escape');
+  await admin.goto(`${BASE}#/saved`);
+  await admin.getByPlaceholder('Paste a link (https://…)').fill('https://example.com/brand-guide');
+  await admin.getByPlaceholder('Name (optional)').fill('Brand guide');
+  await admin.getByRole('button', { name: 'Save link' }).click();
+  await admin.getByText('Brand guide').waitFor();
+  check('A task and a link can be saved into a folder', (await admin.locator('.saved-row').count()) === 2);
+  await shot(admin, 'saved-folders');
 } catch (e) {
   check('Walkthrough completed without errors', false, e.message);
   for (const c of browser.contexts()) for (const pg of c.pages()) await pg.screenshot({ path: `${OUT}/zz-failure-${++n}.png` }).catch(() => {});

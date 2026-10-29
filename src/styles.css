@@ -373,3 +373,37 @@ select.select { padding-right: 28px; }
 }
 :root[data-theme="dark"] .card { background: #2d2e34; border-color: #3a3b42; }
 :root[data-theme="dark"] .card:hover { background: #33343a; }
+
+/* ---------- saved folders ---------- */
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.saved { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; padding: 20px 24px 40px; max-width: 1180px; }
+.saved-folders { display: flex; flex-direction: column; gap: 2px; }
+.saved-folders .nav-item .count { margin-left: auto; }
+.saved-main { min-width: 0; }
+.saved-add { display: grid; grid-template-columns: 16px minmax(0, 2fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-bottom: 12px; color: var(--muted); }
+.saved-add svg { width: 15px; height: 15px; }
+.saved-row { grid-template-columns: 18px minmax(200px, 2fr) minmax(150px, 1.2fr) auto; }
+.saved-row > svg { width: 15px; height: 15px; color: var(--muted); }
+.saved-row .t { display: flex; align-items: center; gap: 6px; }
+.saved-empty { border: 1px dashed var(--border-strong); border-radius: 12px; padding: 40px 24px; text-align: center; color: var(--muted); }
+.saved-empty h2 { color: var(--text); margin: 10px 0 6px; font-size: 15px; }
+.saved-empty p { max-width: 420px; margin: 0 auto; }
+.check-box { width: 14px; display: inline-block; text-align: center; color: var(--ok); font-weight: 700; }
+@media (max-width: 760px) {
+  .saved { grid-template-columns: 1fr; padding: 14px 16px 32px; }
+  .saved-add { grid-template-columns: 1fr; }
+  .saved-add svg { display: none; }
+  .saved-row { grid-template-columns: 18px minmax(0, 1fr) auto; }
+  .saved-row > :nth-child(3) { display: none; }
+}
+
+/* ---------- first-run tour ---------- */
+.tour { position: fixed; inset: 0; z-index: 90; }
+.tour-dim { position: fixed; inset: 0; background: rgba(10, 10, 14, 0.5); }
+.tour-spot { position: fixed; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(10, 10, 14, 0.5), 0 0 0 2px var(--accent); transition: all .2s ease; pointer-events: none; }
+.tour-card { position: fixed; width: min(336px, calc(100vw - 32px)); background: var(--surface); border-radius: 12px; padding: 16px 16px 12px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--border); }
+.tour-card h2 { margin: 2px 0 6px; font-size: 15px; }
+.tour-card p { margin: 0 0 14px; color: var(--text-2); line-height: 1.55; }
+.tour-step { font-size: 11px; color: var(--muted); font-weight: 500; }
+.tour-foot { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 760px) { .tour-card.pointed { left: 16px !important; top: auto !important; bottom: 16px; } }

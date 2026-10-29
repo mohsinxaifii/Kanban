@@ -2,7 +2,7 @@ import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { initDb, dbLocation, one, all, run, tx, now } from './db.js';
+import { initDb, dbLocation, one, all, run, tx, now, DATA_TABLES } from './db.js';
 import { PERMISSIONS, PERMISSION_KEYS, ROLES, ROLE_KEYS, roleDefaults } from './permissions.js';
 import {
   STAGES, ACTIVE_STAGES, HttpError, forbid, bad, can, hasProjectAccess, loadSteps, currentSubmission,
@@ -20,7 +20,25 @@ const SESSION_DAYS = 14;
 // Render provides RENDER_EXTERNAL_URL automatically.
 const PUBLIC_URL = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 
+// One-time wipe: set RESET_WORKSPACE to a phrase of your choice and every person,
+// task and project is deleted on the next start. The same phrase is then needed to
+// create the first administrator on the setup screen. Each phrase is applied once.
+const RESET_PHRASE = (process.env.RESET_WORKSPACE || '').trim();
+const phraseHash = (p) => crypto.createHash('sha256').update(`dd-reset:${p}`).digest('hex');
+
 await initDb();
+if (RESET_PHRASE) {
+  const applied = await one("SELECT value FROM settings WHERE key = 'reset_applied'");
+  if (applied?.value !== phraseHash(RESET_PHRASE)) {
+    await tx(async () => {
+      for (const t of DATA_TABLES) await run(`DELETE FROM ${t}`);
+      await run("INSERT OR REPLACE INTO settings (key, value) VALUES ('reset_applied', ?)", phraseHash(RESET_PHRASE));
+      // A reset workspace never gets the sample data back.
+      await run("INSERT OR REPLACE INTO settings (key, value) VALUES ('demo_seeded', ?)", now());
+    });
+    console.log('RESET_WORKSPACE: all people, tasks and projects were deleted. Open the app to create the first administrator.');
+  }
+}
 if (DEMO_MODE) await seedDemo();
 
 const app = express();
@@ -129,10 +147,41 @@ app.post('/api/auth/logout', async (req, res) => {
   res.json({ ok: true });
 });
 app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
+const setupOpen = async () => !!RESET_PHRASE && !(await one('SELECT id FROM users LIMIT 1'));
 app.get('/api/auth/demo', async (req, res) => {
-  if (!DEMO_MODE) return res.json({ enabled: false, accounts: [], google: googleEnabled() });
+  const setup = await setupOpen();
+  if (!DEMO_MODE || setup) return res.json({ enabled: false, accounts: [], google: googleEnabled(), setup });
   const accounts = await all("SELECT name, email, title FROM users WHERE is_demo = 1 AND status = 'active' ORDER BY id");
-  res.json({ enabled: true, password: DEMO_PASSWORD, accounts, google: googleEnabled() });
+  res.json({ enabled: true, password: DEMO_PASSWORD, accounts, google: googleEnabled(), setup });
+});
+// First administrator after a reset. Only works while nobody exists, and only with
+// the RESET_WORKSPACE phrase, so a stranger who finds the page first cannot claim it.
+const setupAttempts = { n: 0, t: Date.now() };
+app.post('/api/auth/setup', async (req, res) => {
+  if (!(await setupOpen())) return res.status(404).json({ error: 'This workspace is already set up. Sign in instead.' });
+  if (Date.now() - setupAttempts.t > 15 * 60e3) { setupAttempts.n = 0; setupAttempts.t = Date.now(); }
+  if (setupAttempts.n >= 10) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
+  const code = str(req.body.code, 500);
+  const a = Buffer.from(phraseHash(code)); const b = Buffer.from(phraseHash(RESET_PHRASE));
+  if (!crypto.timingSafeEqual(a, b)) { setupAttempts.n += 1; return res.status(403).json({ error: 'That setup phrase is not right. Use the RESET_WORKSPACE value from Render.' }); }
+  const name = str(req.body.name, 120);
+  const email = str(req.body.email, 200).toLowerCase();
+  const pw = str(req.body.password, 200);
+  if (!name) bad('Enter your name.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) bad('Enter a valid email address.');
+  if (pw.length < 10) bad('Use at least 10 characters for the password.');
+  const hash = await hashPassword(pw);
+  const id = await tx(async () => {
+    if (await one('SELECT id FROM users LIMIT 1')) bad('This workspace is already set up. Sign in instead.');
+    return Number((await run(`INSERT INTO users (name, email, title, role, permissions, project_access, status, password_hash, is_demo, color, created_at)
+      VALUES (?,?,'Administrator','admin',?,'"all"','active',?,0,'#111827',?)`, name, email, JSON.stringify(roleDefaults('admin')), hash, now())).lastInsertRowid);
+  });
+  await setSession(res, id);
+  res.status(201).json({ user: await getUser(id) });
+});
+app.post('/api/me/tour', auth, async (req, res) => {
+  await run('UPDATE users SET tour_done = ? WHERE id = ?', req.body.done === false ? 0 : 1, req.user.id);
+  res.json({ ok: true });
 });
 
 // ---------- Google sign-in ----------
@@ -660,6 +709,104 @@ app.post('/api/notifications/read', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- saved folders (private to each person) ----------
+async function ownFolder(user, id) {
+  const f = await one('SELECT * FROM saved_folders WHERE id = ? AND user_id = ?', Number(id), user.id);
+  if (!f) throw new HttpError(404, 'Folder not found.');
+  return f;
+}
+async function ownItem(user, id) {
+  const i = await one('SELECT * FROM saved_items WHERE id = ? AND user_id = ?', Number(id), user.id);
+  if (!i) throw new HttpError(404, 'Saved item not found.');
+  return i;
+}
+function cleanUrl(v) {
+  let u = str(v, 2000);
+  if (u && !/^[a-z][a-z0-9+.-]*:/i.test(u)) u = `https://${u}`;
+  try {
+    const parsed = new URL(u);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+    return parsed.href;
+  } catch { return bad('Enter a web link starting with http:// or https://.'); }
+}
+app.get('/api/saved', auth, async (req, res) => {
+  const folders = await all('SELECT id, name, created_at FROM saved_folders WHERE user_id = ? ORDER BY name COLLATE NOCASE', req.user.id);
+  const items = await all('SELECT * FROM saved_items WHERE user_id = ? ORDER BY created_at DESC, id DESC', req.user.id);
+  const taskIds = [...new Set(items.filter((i) => i.task_id).map((i) => i.task_id))];
+  const tasks = new Map();
+  if (taskIds.length) {
+    const ctx = await context(taskIds);
+    for (const t of await all(`SELECT * FROM tasks WHERE id IN (${taskIds.join(',')})`)) {
+      // Saving a card never widens access: it shows only while you can still see the task.
+      const view = viewLevel(req.user, t, ctx.steps.get(t.id) || []);
+      if (view) tasks.set(t.id, summarize(t, ctx, view));
+    }
+  }
+  res.json({
+    folders: folders.map((f) => ({
+      ...f,
+      items: items.filter((i) => i.folder_id === f.id).map((i) => ({
+        id: i.id, kind: i.kind, title: i.title, note: i.note, url: i.url, created_at: i.created_at, task_id: i.task_id,
+        task: i.kind === 'task' ? tasks.get(i.task_id) || null : undefined,
+      })),
+    })),
+  });
+});
+app.post('/api/saved/folders', auth, async (req, res) => {
+  const name = str(req.body.name, 80);
+  if (!name) bad('Give the folder a name.');
+  if (await one('SELECT id FROM saved_folders WHERE user_id = ? AND name = ? COLLATE NOCASE', req.user.id, name)) bad('You already have a folder with that name.');
+  const r = await run('INSERT INTO saved_folders (user_id, name, created_at) VALUES (?,?,?)', req.user.id, name, now());
+  res.status(201).json({ id: Number(r.lastInsertRowid), name });
+});
+app.patch('/api/saved/folders/:id', auth, async (req, res) => {
+  const f = await ownFolder(req.user, req.params.id);
+  const name = str(req.body.name, 80);
+  if (!name) bad('Give the folder a name.');
+  if (await one('SELECT id FROM saved_folders WHERE user_id = ? AND name = ? COLLATE NOCASE AND id != ?', req.user.id, name, f.id)) bad('You already have a folder with that name.');
+  await run('UPDATE saved_folders SET name = ? WHERE id = ?', name, f.id);
+  res.json({ ok: true });
+});
+app.delete('/api/saved/folders/:id', auth, async (req, res) => {
+  const f = await ownFolder(req.user, req.params.id);
+  await tx(async () => {
+    await run('DELETE FROM saved_items WHERE folder_id = ?', f.id);
+    await run('DELETE FROM saved_folders WHERE id = ?', f.id);
+  });
+  res.json({ ok: true });
+});
+app.post('/api/saved/items', auth, async (req, res) => {
+  const f = await ownFolder(req.user, req.body.folder_id);
+  const note = str(req.body.note, 1000);
+  if (req.body.kind === 'task') {
+    const { task } = await requireView(req.user, req.body.task_id, 'any');
+    if (await one('SELECT id FROM saved_items WHERE folder_id = ? AND task_id = ?', f.id, task.id)) bad(`This task is already in “${f.name}”.`);
+    const r = await run("INSERT INTO saved_items (folder_id, user_id, kind, task_id, title, note, created_at) VALUES (?,?,'task',?,?,?,?)", f.id, req.user.id, task.id, task.title, note, now());
+    return res.status(201).json({ id: Number(r.lastInsertRowid) });
+  }
+  if (req.body.kind === 'link') {
+    const url = cleanUrl(req.body.url);
+    const title = str(req.body.title, 200) || new URL(url).hostname;
+    const r = await run("INSERT INTO saved_items (folder_id, user_id, kind, url, title, note, created_at) VALUES (?,?,'link',?,?,?,?)", f.id, req.user.id, url, title, note, now());
+    return res.status(201).json({ id: Number(r.lastInsertRowid) });
+  }
+  bad('Choose a task or a link to save.');
+});
+app.patch('/api/saved/items/:id', auth, async (req, res) => {
+  const i = await ownItem(req.user, req.params.id);
+  const folderId = 'folder_id' in req.body ? (await ownFolder(req.user, req.body.folder_id)).id : i.folder_id;
+  const title = 'title' in req.body ? str(req.body.title, 200) || i.title : i.title;
+  const note = 'note' in req.body ? str(req.body.note, 1000) : i.note;
+  const url = i.kind === 'link' && 'url' in req.body ? cleanUrl(req.body.url) : i.url;
+  await run('UPDATE saved_items SET folder_id = ?, title = ?, note = ?, url = ? WHERE id = ?', folderId, title, note, url, i.id);
+  res.json({ ok: true });
+});
+app.delete('/api/saved/items/:id', auth, async (req, res) => {
+  const i = await ownItem(req.user, req.params.id);
+  await run('DELETE FROM saved_items WHERE id = ?', i.id);
+  res.json({ ok: true });
+});
+
 // ---------- administration ----------
 const COLORS = ['#7c5cff', '#e5484d', '#12a594', '#f76b15', '#3e63dd', '#d6409f', '#8e4ec6', '#0d74ce', '#ad7f58', '#46a758'];
 async function sanitizeAccess(v) {
@@ -762,7 +909,7 @@ app.post('/api/admin/demo/remove', auth, need('users.manage'), async (req, res) 
     // Child rows are deleted explicitly: hosted databases may not enforce ON DELETE CASCADE.
     const demoTasks = 'SELECT id FROM tasks WHERE is_demo = 1';
     await run(`DELETE FROM reviews WHERE submission_id IN (SELECT id FROM submissions WHERE task_id IN (${demoTasks}))`);
-    for (const table of ['deliveries', 'submissions', 'approval_steps', 'comments', 'activity', 'notifications']) {
+    for (const table of ['deliveries', 'submissions', 'approval_steps', 'comments', 'activity', 'notifications', 'saved_items']) {
       await run(`DELETE FROM ${table} WHERE task_id IN (${demoTasks})`);
     }
     await run('DELETE FROM tasks WHERE is_demo = 1');
@@ -773,6 +920,8 @@ app.post('/api/admin/demo/remove', auth, need('users.manage'), async (req, res) 
       if (used) await run("UPDATE users SET status = 'deactivated' WHERE id = ?", u.id);
       else {
         await run('DELETE FROM notifications WHERE user_id = ?', u.id);
+        await run('DELETE FROM saved_items WHERE user_id = ?', u.id);
+        await run('DELETE FROM saved_folders WHERE user_id = ?', u.id);
         await run('DELETE FROM activity WHERE actor_id = ?', u.id);
         await run('DELETE FROM sessions WHERE user_id = ?', u.id);
         await run('DELETE FROM users WHERE id = ?', u.id);

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, fmtDate, fmtDateTime, ago, taskKey, first, statusLine, todayISO } from '../api.js';
 import { useApp, Avatar, Person, StatusLine, Due, StatusMenu, Modal, Notice } from '../components/ui.jsx';
 import { PersonPicker, REQ } from '../components/PersonPicker.jsx';
+import { SaveButton } from '../components/SaveButton.jsx';
 import { StepsEditor } from './NewTask.jsx';
 import { Icon, StageIcon, PriorityIcon } from '../components/icons.jsx';
 
@@ -73,6 +74,7 @@ function PanelHead({ task, onClose, children }) {
       {task.is_demo && <span className="tag-demo" title="Sample work for the demo">Sample</span>}
       {children}
       <span style={{ flex: 1 }} />
+      <SaveButton taskId={task.id} />
       <button className="icon-btn" onClick={onClose} aria-label="Close panel"><Icon.close /></button>
     </div>
   );

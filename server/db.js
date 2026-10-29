@@ -142,6 +142,25 @@ CREATE TABLE IF NOT EXISTS notifications (
   read INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+-- Personal folders where someone keeps tasks and links. Private to their owner.
+CREATE TABLE IF NOT EXISTS saved_folders (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS saved_items (
+  id INTEGER PRIMARY KEY,
+  folder_id INTEGER NOT NULL REFERENCES saved_folders(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,          -- task | link
+  task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+  url TEXT,
+  title TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_saved_user ON saved_items(user_id, folder_id);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_steps_task ON approval_steps(task_id, position);
 CREATE INDEX IF NOT EXISTS idx_subs_task ON submissions(task_id);
@@ -156,7 +175,15 @@ export async function initDb() {
   }
   await client.execute('PRAGMA foreign_keys = ON');
   await client.executeMultiple(SCHEMA);
+  // Columns added after the first release.
+  const cols = (await client.execute('PRAGMA table_info(users)')).rows.map((r) => r[1]);
+  if (!cols.includes('tour_done')) await client.execute('ALTER TABLE users ADD COLUMN tour_done INTEGER NOT NULL DEFAULT 0');
 }
+
+// Every table that holds workspace data, children first (hosted databases may not
+// enforce ON DELETE CASCADE).
+export const DATA_TABLES = ['reviews', 'deliveries', 'submissions', 'approval_steps', 'comments', 'activity', 'notifications',
+  'saved_items', 'saved_folders', 'tasks', 'sessions', 'users', 'projects', 'clients'];
 
 export const now = () => new Date().toISOString();
 

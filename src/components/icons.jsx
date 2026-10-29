@@ -61,5 +61,10 @@ export const Icon = {
   send: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M14 2L7 9M14 2l-4.5 12-2.5-5-5-2.5z" /></svg>,
   user: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="8" cy="5.5" r="2.6" /><path d="M3 14c.5-2.8 2.5-4.2 5-4.2s4.5 1.4 5 4.2" /></svg>,
   logout: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M6 13.5H3.5a1 1 0 01-1-1v-9a1 1 0 011-1H6M10.5 11l3-3-3-3M13.5 8H6" /></svg>,
+  bookmark: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M4 2.5h8v11L8 10.8 4 13.5z" /></svg>,
+  folder: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M2 4.2a1 1 0 011-1h3l1.5 1.6H13a1 1 0 011 1V12a1 1 0 01-1 1H3a1 1 0 01-1-1z" /></svg>,
+  link: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M6.8 9.2a2.6 2.6 0 003.7 0l2-2a2.6 2.6 0 00-3.7-3.7l-.8.8M9.2 6.8a2.6 2.6 0 00-3.7 0l-2 2a2.6 2.6 0 003.7 3.7l.8-.8" /></svg>,
+  help: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="8" cy="8" r="6" /><path d="M6.3 6.3a1.8 1.8 0 013.4.7c0 1.2-1.7 1.4-1.7 2.5M8 11.4v.1" /></svg>,
+  trash: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9" /></svg>,
   search: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>,
 };

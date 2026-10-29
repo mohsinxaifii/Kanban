@@ -27,11 +27,11 @@ const fakeGoogle = http.createServer((req, res) => {
   });
 }).listen(FAKE_GOOGLE_PORT);
 
-function startServer() {
+function startServer(extraEnv = {}) {
   return new Promise((resolve, reject) => {
     server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
       env: { ...process.env, PORT: String(PORT), DATABASE_PATH: DB, DEMO_MODE: 'true', PUBLIC_URL: BASE, GOOGLE_DRIVE_API_KEY: '', TURSO_DATABASE_URL: '',
-        GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', GOOGLE_TOKEN_URL: `http://localhost:${FAKE_GOOGLE_PORT}/token` },
+        GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', GOOGLE_TOKEN_URL: `http://localhost:${FAKE_GOOGLE_PORT}/token`, RESET_WORKSPACE: '', ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     server.stdout.on('data', (d) => { if (String(d).includes('studio on')) resolve(); });
@@ -276,6 +276,25 @@ async function main() {
   check('Aanya\'s open session received live change events', events.join('').includes('"changed"') && events.join('').includes('"notification"'));
   ac.abort();
 
+  section('Saved folders');
+  r = await kabir.post('/saved/folders', { name: 'Launch refs' });
+  expectStatus('Kabir creates a folder', r, 201);
+  const KF = r.data.id;
+  expectStatus('Kabir saves a task he can see', await kabir.post('/saved/items', { folder_id: KF, kind: 'task', task_id: T }), 201);
+  expectStatus('Saving the same task twice in one folder is refused', await kabir.post('/saved/items', { folder_id: KF, kind: 'task', task_id: T }), 400);
+  expectStatus('Kabir saves a link', await kabir.post('/saved/items', { folder_id: KF, kind: 'link', url: 'drive.google.com/drive/folders/abc', title: 'Brand kit' }), 201);
+  expectStatus('Non-web links (javascript:) are refused', await kabir.post('/saved/items', { folder_id: KF, kind: 'link', url: 'javascript:alert(1)' }), 400);
+  r = await kabir.get('/saved');
+  const kf = r.data.folders.find((f) => f.id === KF);
+  check('Folder lists the saved task (with live status) and the link', kf.items.length === 2 && kf.items.some((i) => i.task?.stage === 'delivered') && kf.items.some((i) => i.url === 'https://drive.google.com/drive/folders/abc'));
+  check('Folders are private: Meera sees none of Kabir\'s folders', (await meera.get('/saved')).data.folders.length === 0);
+  expectStatus('Meera cannot add to Kabir\'s folder', await meera.post('/saved/items', { folder_id: KF, kind: 'link', url: 'https://example.com' }), 404);
+  expectStatus('Meera cannot delete Kabir\'s folder', await meera.req('DELETE', `/saved/folders/${KF}`), 404);
+  const mf = (await meera.post('/saved/folders', { name: 'Mine' })).data.id;
+  expectStatus('Saving a task you cannot see is refused (no access leak)', await meera.post('/saved/items', { folder_id: mf, kind: 'task', task_id: T }), 404);
+  expectStatus('Tour can be marked as done', await meera.post('/me/tour', { done: true }), 200);
+  check('Tour state is remembered for the person', (await meera.get('/auth/me')).data.user.tour_done === 1);
+
   section('Persistence across a server restart');
   await stopServer();
   await startServer();
@@ -301,6 +320,26 @@ async function main() {
   const users = (await realAdmin.get('/admin/users')).data;
   check('Demo people who worked on real tasks are deactivated, not deleted', users.find((u) => u.name === 'Rohan Mehta')?.status === 'deactivated');
   check('Demo people with no real work are deleted', !users.some((u) => u.name === 'Meera Kapoor'));
+
+  section('One-time workspace reset (RESET_WORKSPACE)');
+  await stopServer();
+  await startServer({ RESET_WORKSPACE: 'fresh start phrase' });
+  const fresh = new Client('Fresh');
+  r = await fresh.get('/auth/demo');
+  check('After the reset nobody exists and the setup screen is offered', r.data.setup === true && r.data.accounts.length === 0);
+  expectStatus('Old accounts no longer sign in', await fresh.login('real.admin@example.com', 'real-admin-password'), 401);
+  expectStatus('Setup without the right phrase is refused', await fresh.post('/auth/setup', { name: 'Owner', email: 'owner@example.com', password: 'owner-password-1', code: 'wrong' }), 403);
+  expectStatus('Setup with the phrase creates the first administrator', await fresh.post('/auth/setup', { name: 'Owner', email: 'owner@example.com', password: 'owner-password-1', code: 'fresh start phrase' }), 201);
+  check('The new administrator can manage people', (await fresh.get('/auth/me')).data.user.permissions.includes('users.manage'));
+  check('No tasks, projects or demo people remain', (await fresh.get('/tasks')).data.length === 0 && (await fresh.get('/admin/projects')).data.projects.length === 0 && (await fresh.get('/admin/users')).data.length === 1);
+  expectStatus('Setup cannot be used a second time', await new Client('x').post('/auth/setup', { name: 'X', email: 'x@example.com', password: 'xxxxxxxxxxxx', code: 'fresh start phrase' }), 404);
+  r = await fresh.post('/admin/users', { name: 'First Hire', email: 'hire@example.com', role: 'producer' });
+  check('The administrator gets an invite link for a new person', r.status === 201 && r.data.invite_url?.includes('#/invite/'));
+  await stopServer();
+  await startServer({ RESET_WORKSPACE: 'fresh start phrase' });
+  const again = new Client('Again');
+  expectStatus('Restarting with the same phrase does not wipe again', await again.login('owner@example.com', 'owner-password-1'), 200);
+  check('Demo data is not seeded back after a reset', !(await again.get('/admin/users')).data.some((u) => u.is_demo));
 
   await stopServer();
   const failed = results.filter((x) => x.ok === false);

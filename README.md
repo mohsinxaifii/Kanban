@@ -10,6 +10,8 @@ Internal creative-production workspace for Design Dimensions: a Linear-style boa
 - Configurable approval chain per task (for example Creative Head → Account Manager). Approvals are tied to the exact version reviewed; a new version always needs fresh approval.
 - Permissions are enforced on the server. Review, approval and delivery stages can only be reached through submissions, approvals and delivery records, so dragging a card cannot skip approval.
 - Live updates: changes made by one person appear for everyone else without refreshing, plus in-app notifications.
+- **Saved**: each person's private folders of tasks and web links. Save a task from its panel; saving never shares or widens access.
+- A short **welcome tour** for every new person on their first sign-in, which they can replay from "Take the tour" in the sidebar.
 
 ## Stack
 
@@ -50,6 +52,17 @@ The login page lists the fictional demo accounts. All use the password `demo-stu
 
 They use the reserved `demo.designdimensions.test` domain, are labelled **Demo** everywhere, and the sample tasks are labelled **Sample**. The client names (Halden Audio, Saffron & Sage, Northpeak Outdoors) are fictional.
 
+### Starting over with an empty workspace
+
+To delete every person, task, project and saved item and start fresh (for example on the live site):
+
+1. In Render → your service → **Environment**, add `RESET_WORKSPACE` with a phrase only you know (for example `fresh-start-oct-2026`), and save. Render redeploys.
+2. On start the server deletes everything once for that phrase. The demo data does not come back.
+3. Open the site. It shows **Set up your studio**: enter your name, email, a password and the same phrase. You are signed in as the administrator.
+4. Go to **Team Settings → People → Add person** for each teammate; each one gives you an invite link to send them.
+
+Leaving `RESET_WORKSPACE` in place is safe: the same phrase never wipes twice. Changing it to a new phrase wipes again, so delete the variable once you are set up.
+
 ### Going live with real accounts
 
 1. Create a real administrator:
@@ -75,13 +88,14 @@ Copy `.env.example` to `.env` (loaded automatically by `npm start`).
 | `DEMO_PASSWORD` | `demo-studio-2026` | Password for demo accounts |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Optional. Enables “Continue with Google”. See Google sign-in below |
 | `GOOGLE_DRIVE_API_KEY` | empty | Optional. See Google Drive below |
+| `RESET_WORKSPACE` | empty | A phrase. Deletes all data once per phrase and opens the first-administrator setup screen (see above) |
 
 ## Verification
 
 Two scripts start their own server on a fresh temporary database:
 
 ```bash
-npm run verify       # 105 API checks with separate signed-in accounts
+npm run verify       # 127 API checks with separate signed-in accounts
 npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright Chromium, or CHROME_PATH=/path/to/chrome)
 ```
 

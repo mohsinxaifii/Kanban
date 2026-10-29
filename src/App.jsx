@@ -11,8 +11,10 @@ import { Approvals } from './views/Approvals.jsx';
 import { Team } from './views/Team.jsx';
 import { TaskPanel } from './views/TaskPanel.jsx';
 import { NewTask } from './views/NewTask.jsx';
+import { Saved } from './views/Saved.jsx';
+import { Tour } from './components/Tour.jsx';
 
-// Hash routes: #/board, #/my-work, #/planner, #/approvals, #/team, #/invite/<token>; ?task=<id> opens the panel.
+// Hash routes: #/board, #/my-work, #/planner, #/approvals, #/saved, #/team, #/invite/<token>; ?task=<id> opens the panel.
 function parseHash() {
   const h = window.location.hash.replace(/^#/, '') || '/board';
   const [path, query = ''] = h.split('?');
@@ -51,6 +53,7 @@ function Workspace({ me, setMe, route }) {
   const [toasts, setToasts] = useState([]);
   const [version, setVersion] = useState(0); // bumps on every live update
   const [creating, setCreating] = useState(false);
+  const [touring, setTouring] = useState(!me.tour_done);
 
   const toast = useCallback((text, kind = 'ok') => {
     const id = Math.random();
@@ -107,6 +110,7 @@ function Workspace({ me, setMe, route }) {
     '/my-work': { title: 'My Work', el: <MyWork /> },
     '/planner': { title: 'Weekly Planner', el: <Planner /> },
     '/approvals': { title: 'Approvals', el: <Approvals /> },
+    '/saved': { title: 'Saved', el: <Saved /> },
     '/team': { title: 'Team Settings', el: <Team /> },
   };
   const view = views[route.path] || views['/board'];
@@ -120,16 +124,18 @@ function Workspace({ me, setMe, route }) {
             <span className="workspace-label">Creative production{me.is_demo ? ' · Demo workspace' : ''}</span>
           </div>
           {ctx.can('tasks.create') && (
-            <button className="btn" style={{ justifyContent: 'flex-start', margin: '0 0 8px' }} onClick={() => setCreating(true)}><Icon.plus /> New task</button>
+            <button className="btn" data-tour="new-task" style={{ justifyContent: 'flex-start', margin: '0 0 8px' }} onClick={() => setCreating(true)}><Icon.plus /> New task</button>
           )}
-          <NavItem path="/my-work" route={route} icon={Icon.inbox} label="My Work" count={myActions} hot={myActions > 0} />
-          <NavItem path="/approvals" route={route} icon={Icon.check} label="Approvals" count={myApprovals} hot={myApprovals > 0} />
+          <NavItem tour="my-work" path="/my-work" route={route} icon={Icon.inbox} label="My Work" count={myActions} hot={myActions > 0} />
+          <NavItem tour="approvals" path="/approvals" route={route} icon={Icon.check} label="Approvals" count={myApprovals} hot={myApprovals > 0} />
           <div className="nav-section">Workspace</div>
-          <NavItem path="/board" route={route} icon={Icon.board} label="Team Board" />
-          <NavItem path="/planner" route={route} icon={Icon.calendar} label="Weekly Planner" />
-          {ctx.can('users.manage') && <NavItem path="/team" route={route} icon={Icon.team} label="Team Settings" />}
+          <NavItem tour="board" path="/board" route={route} icon={Icon.board} label="Team Board" />
+          <NavItem tour="planner" path="/planner" route={route} icon={Icon.calendar} label="Weekly Planner" />
+          <NavItem tour="saved" path="/saved" route={route} icon={Icon.bookmark} label="Saved" />
+          {ctx.can('users.manage') && <NavItem tour="team" path="/team" route={route} icon={Icon.team} label="Team Settings" />}
           <div className="sidebar-spacer" />
           <ThemeSwitch />
+          <button className="nav-item" data-tour="help" onClick={() => setTouring(true)}><Icon.help /> Take the tour</button>
           <Notifications items={notifications} reload={reloadNotifications} openTask={openTask} />
           <div className="me">
             <Avatar user={me} size="lg" />
@@ -150,16 +156,17 @@ function Workspace({ me, setMe, route }) {
         </main>
       </div>
       {taskId && <TaskPanel id={taskId} onClose={() => openTask(null)} />}
+      {touring && <Tour onDone={() => { setTouring(false); setMe((m) => ({ ...m, tour_done: 1 })); }} />}
       {creating && <NewTask onClose={() => setCreating(false)} onCreated={(t) => { setCreating(false); openTask(t.id); }} />}
       <div className="toasts" aria-live="polite">{toasts.map((t) => <div key={t.id} className={`toast ${t.kind === 'err' ? 'err' : ''}`}>{t.text}</div>)}</div>
     </AppCtx.Provider>
   );
 }
 
-function NavItem({ path, route, icon: I, label, count, hot }) {
-  const active = route.path === path || (path === '/board' && !['/my-work', '/planner', '/approvals', '/team'].includes(route.path));
+function NavItem({ path, route, icon: I, label, count, hot, tour }) {
+  const active = route.path === path || (path === '/board' && !['/my-work', '/planner', '/approvals', '/saved', '/team'].includes(route.path));
   return (
-    <a className={`nav-item ${active ? 'active' : ''}`} href={`#${path}`} aria-current={active ? 'page' : undefined}>
+    <a data-tour={tour} className={`nav-item ${active ? 'active' : ''}`} href={`#${path}`} aria-current={active ? 'page' : undefined}>
       <I /> {label} {count > 0 && <span className={`count ${hot ? 'hot' : ''}`}>{count}</span>}
     </a>
   );
@@ -185,7 +192,7 @@ function Notifications({ items, reload, openTask }) {
   const unread = items.filter((n) => !n.read).length;
   return (
     <div ref={pop.ref}>
-      <button className="nav-item" onClick={() => pop.setOpen((o) => !o)} aria-expanded={pop.open}>
+      <button className="nav-item" data-tour="notifications" onClick={() => pop.setOpen((o) => !o)} aria-expanded={pop.open}>
         <Icon.bell /> Notifications {unread > 0 && <span className="count hot">{unread}</span>}
       </button>
       {pop.open && (

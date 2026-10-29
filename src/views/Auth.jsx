@@ -39,6 +39,7 @@ export function Login({ onLogin }) {
     } catch (err) { setError(err.message); }
   }
   const colors = ['#7c5cff', '#0d74ce', '#d6409f', '#12a594', '#f76b15', '#4b5563'];
+  if (demo?.setup) return <Setup onLogin={onLogin} />;
 
   return (
     <div className="auth">
@@ -95,6 +96,35 @@ export function AcceptInvite({ token, onDone }) {
             <button className="btn primary" type="submit">Activate account</button>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Shown only after RESET_WORKSPACE has emptied the workspace and nobody exists yet.
+function Setup({ onLogin }) {
+  const [f, setF] = useState({ name: '', email: '', password: '', code: '' });
+  const [error, setError] = useState('');
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    try { const r = await api('/auth/setup', { method: 'POST', body: f }); onLogin(r.user); } catch (err) { setError(err.message); }
+  }
+  return (
+    <div className="auth">
+      <div className="auth-card">
+        <img src="/dd-logo.png" alt="Design Dimensions" />
+        <form className="stack" onSubmit={submit}>
+          <h1>Set up your studio</h1>
+          <p className="hint" style={{ margin: 0 }}>The workspace is empty. Create the first administrator account. You can invite everyone else from Team Settings afterwards.</p>
+          <div className="field"><label htmlFor="s-name">Your name</label><input id="s-name" className="input" autoComplete="name" value={f.name} onChange={set('name')} required /></div>
+          <div className="field"><label htmlFor="s-email">Email</label><input id="s-email" className="input" type="email" autoComplete="username" value={f.email} onChange={set('email')} required /><span className="hint">Use your Google email if you want to sign in with Google later.</span></div>
+          <div className="field"><label htmlFor="s-pw">Password</label><input id="s-pw" className="input" type="password" minLength={10} autoComplete="new-password" value={f.password} onChange={set('password')} required /><span className="hint">At least 10 characters.</span></div>
+          <div className="field"><label htmlFor="s-code">Setup phrase</label><input id="s-code" className="input" autoComplete="off" value={f.code} onChange={set('code')} required /><span className="hint">The RESET_WORKSPACE value you entered in Render. It stops anyone else from claiming the workspace first.</span></div>
+          {error && <div className="error-text" role="alert">{error}</div>}
+          <button className="btn primary" type="submit" style={{ height: 32 }}>Create administrator</button>
+        </form>
       </div>
     </div>
   );

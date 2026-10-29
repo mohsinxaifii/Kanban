@@ -132,10 +132,10 @@ function Workspace({ me, setMe, route }) {
           <NavItem tour="board" path="/board" route={route} icon={Icon.board} label="Team Board" />
           <NavItem tour="planner" path="/planner" route={route} icon={Icon.calendar} label="Weekly Planner" />
           <NavItem tour="saved" path="/saved" route={route} icon={Icon.bookmark} label="Saved" />
-          {ctx.can('users.manage') && <NavItem tour="team" path="/team" route={route} icon={Icon.team} label="Team Settings" />}
           <div className="sidebar-spacer" />
           <ThemeSwitch />
           <button className="nav-item" data-tour="help" onClick={() => setTouring(true)}><Icon.help /> Take the tour</button>
+          {ctx.can('users.manage') && <NavItem tour="team" path="/team" route={route} icon={Icon.team} label="Team Settings" />}
           <Notifications items={notifications} reload={reloadNotifications} openTask={openTask} />
           <div className="me">
             <Avatar user={me} size="lg" />

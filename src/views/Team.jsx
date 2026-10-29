@@ -8,14 +8,13 @@ export function Team() {
   return (
     <div className="page">
       <div className="tabs">
-        {[['people', 'People'], ['projects', 'Projects'], ['roles', 'Roles and permissions'], ['demo', 'Demo data']].map(([k, l]) => (
+        {[['people', 'People'], ['projects', 'Projects'], ['roles', 'Roles and permissions']].map(([k, l]) => (
           <button key={k} className={`tab ${tab === k ? 'on' : ''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
       {tab === 'people' && <People />}
       {tab === 'projects' && <Projects />}
       {tab === 'roles' && <Roles />}
-      {tab === 'demo' && <DemoData />}
     </div>
   );
 }
@@ -60,7 +59,7 @@ function People() {
           </tbody>
         </table>
       </div>
-      <p className="hint">People marked Demo are fictional sample accounts. Only invited people who accept their invitation can sign in; adding someone to a task never creates an account.</p>
+      <p className="hint">Only invited people who accept their invitation can sign in; adding someone to a task never creates an account.</p>
       {adding && <PersonModal onClose={() => setAdding(false)} onSaved={(u) => { setAdding(false); load(); setEditing(u); }} />}
       {editing && <PersonModal user={editing} onClose={() => setEditing(null)} onSaved={(u) => { load(); setEditing(u); }} />}
     </>
@@ -198,24 +197,5 @@ function Roles() {
       </div>
       <p className="hint">Account managers can approve only when explicitly authorised. Recipients see only work delivered to them, and review only when given approval permission and named as an approver.</p>
     </>
-  );
-}
-
-function DemoData() {
-  const { me, toast, reloadAll } = useApp();
-  return (
-    <div className="stack" style={{ maxWidth: 640 }}>
-      <Notice tone="info">
-        The demo workspace contains fictional people (Aanya Shah, Rohan Mehta, Meera Kapoor, Kabir Sethi, Nisha Rao and Studio Admin, all on the reserved <code>demo.designdimensions.test</code> domain)
-        and sample tasks for fictional clients. They are marked “Demo” and “Sample” throughout the app.
-      </Notice>
-      <p style={{ margin: 0 }}>Removing demo data deletes every sample task and the demo accounts. Demo people who appear on real work are deactivated instead of deleted, so history stays intact. This cannot be undone.</p>
-      {me.is_demo
-        ? <Notice>You are signed in with a demo account. Create a real administrator (see the setup guide) and sign in as them to remove demo data.</Notice>
-        : <div><button className="btn danger" onClick={async () => {
-          if (!window.confirm('Remove all demo people and sample work? This cannot be undone.')) return;
-          try { await api('/admin/demo/remove', { method: 'POST' }); toast('Demo data removed'); reloadAll(); } catch (e) { toast(e.message, 'err'); }
-        }}>Remove demo data</button></div>}
-    </div>
   );
 }

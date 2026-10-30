@@ -13,12 +13,13 @@ export function useMove() {
   };
 }
 
-export function TaskCard({ task, selected, draggable, onDragStart, onDragEnd, dragging, thumbs }) {
+export function TaskCard({ task, selected, draggable, onDragStart, onDragEnd, dragging, thumbs, index = 0 }) {
   const { openTask, meta } = useApp();
   const move = useMove();
   return (
     <div className={`card ${task.blocked ? 'is-blocked' : ''} ${selected ? 'selected' : ''} ${dragging ? 'dragging' : ''}`}
       draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd}
+      style={{ '--i': Math.min(index, 12), viewTransitionName: `task-${task.id}` }}
       onClick={() => openTask(task.id)} role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') openTask(task.id); }}
       aria-label={`${task.title}, ${meta.stages.find((s) => s.key === task.stage)?.label}`}>
@@ -39,12 +40,12 @@ export function TaskCard({ task, selected, draggable, onDragStart, onDragEnd, dr
         <img className="thumb" src={task.current_submission.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer"
           onError={(e) => { e.currentTarget.style.display = 'none'; }} />
       )}
+      <div className="card-client">{task.client.name}<span> · {task.project.name}</span></div>
       <div className="card-title">{task.title}</div>
-      <div className="card-client">{task.client.name} · {task.project.name}</div>
       <StatusLine task={task} compact />
       <div className="card-foot">
-        <Avatar user={task.creator} size="xs" />
-        <span className="grow">Created by {first(task.creator)}</span>
+        {task.assignee ? <Avatar user={task.assignee} size="xs" /> : <Avatar user={task.creator} size="xs" />}
+        <span className="grow">{task.assignee ? first(task.assignee) : `By ${first(task.creator)}`}</span>
         <Due date={task.due_date} stage={task.stage} />
       </div>
     </div>
@@ -58,6 +59,7 @@ export function Board() {
   const move = useMove();
   const [f, setF] = useState({ client: '', project: '', week: '', creator: '', approver: '', owner: '', priority: '', blocked: false, q: '', hideSample: false });
   const [thumbs, setThumbs] = useState(false);
+  const [more, setMore] = useState(false);
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -78,6 +80,7 @@ export function Board() {
     return true;
   });
   const active = Object.entries(f).filter(([k, v]) => v && k !== 'q').length;
+  const hiddenActive = ['project', 'week', 'priority', 'creator', 'approver', 'hideSample'].filter((k) => f[k]).length;
   const sel = (k, label, opts) => (
     <select className={`filter ${f[k] ? 'on' : ''}`} value={f[k]} onChange={set(k)} aria-label={label}>
       <option value="">{label}</option>
@@ -90,21 +93,28 @@ export function Board() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="filters" role="search">
-        <input className="search" placeholder="Search tasks" value={f.q} onChange={set('q')} aria-label="Search tasks" />
-        {sel('client', 'Client', clients.map((c) => [c.id, c.name]))}
-        {sel('project', 'Project', projects.map((p) => [p.id, p.name]))}
-        {sel('week', 'Week', WEEKS)}
-        {sel('creator', 'Creator', peopleOpts)}
-        {sel('approver', 'Approver', peopleOpts)}
-        {sel('owner', 'Action owner', peopleOpts)}
-        {sel('priority', 'Priority', [['urgent', 'Urgent'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}
+        <div className="search-wrap"><Icon.search width={14} height={14} /><input className="search" placeholder="Search tasks" value={f.q} onChange={set('q')} aria-label="Search tasks" /></div>
+        {sel('client', 'All clients', clients.map((c) => [c.id, c.name]))}
+        {sel('owner', 'Anyone’s turn', peopleOpts)}
         <label className={`toggle ${f.blocked ? 'on' : ''}`}><input type="checkbox" checked={f.blocked} onChange={(e) => setF({ ...f, blocked: e.target.checked })} /> Blocked only</label>
-        <label className={`toggle ${f.hideSample ? 'on' : ''}`} style={f.hideSample ? { borderColor: 'var(--ink)', color: 'var(--text)', background: 'var(--subtle)' } : undefined}><input type="checkbox" checked={f.hideSample} onChange={(e) => setF({ ...f, hideSample: e.target.checked })} /> Hide sample work</label>
-        <label className={`toggle ${thumbs ? 'on' : ''}`} style={thumbs ? { borderColor: 'var(--ink)', color: 'var(--text)', background: 'var(--subtle)' } : undefined} title="Small Drive thumbnails load with your own Google account"><input type="checkbox" checked={thumbs} onChange={(e) => setThumbs(e.target.checked)} /> Thumbnails</label>
-        {active > 0 && <button className="btn ghost sm" onClick={() => setF({ client: '', project: '', week: '', creator: '', approver: '', owner: '', priority: '', blocked: false, q: '', hideSample: false })}>Clear filters</button>}
+        <button className={`btn ghost sm more-btn ${more ? 'on' : ''}`} onClick={() => setMore((m) => !m)} aria-expanded={more}>
+          <Icon.filter width={13} height={13} /> More filters{hiddenActive > 0 && <span className="count-pill">{hiddenActive}</span>}
+        </button>
+        {active > 0 && <button className="btn ghost sm" onClick={() => setF({ client: '', project: '', week: '', creator: '', approver: '', owner: '', priority: '', blocked: false, q: '', hideSample: false })}>Clear</button>}
         <span style={{ flex: 1 }} />
-        <span className="hint">{filtered.length} of {tasks.length} tasks</span>
+        <span className="hint">{filtered.length === tasks.length ? `${tasks.length} tasks` : `${filtered.length} of ${tasks.length} tasks`}</span>
       </div>
+      {more && (
+        <div className="filters secondary">
+          {sel('project', 'Project', projects.map((p) => [p.id, p.name]))}
+          {sel('week', 'Due', WEEKS)}
+          {sel('priority', 'Priority', [['urgent', 'Urgent'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}
+          {sel('creator', 'Creator', peopleOpts)}
+          {sel('approver', 'Approver', peopleOpts)}
+          <label className={`toggle plain ${f.hideSample ? 'on' : ''}`}><input type="checkbox" checked={f.hideSample} onChange={(e) => setF({ ...f, hideSample: e.target.checked })} /> Hide sample work</label>
+          <label className={`toggle plain ${thumbs ? 'on' : ''}`} title="Small Drive thumbnails load with your own Google account"><input type="checkbox" checked={thumbs} onChange={(e) => setThumbs(e.target.checked)} /> Thumbnails</label>
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0, overflowX: 'auto' }}>
         <div className="board">
           {meta.stages.map((s) => {
@@ -112,17 +122,17 @@ export function Board() {
             const locked = !meta.manualTargets.includes(s.key);
             const cls = drag ? (canDrop(s.key) ? (over === s.key ? 'drop-ok' : '') : (s.key !== drag.stage ? 'drop-no' : '')) : '';
             return (
-              <section key={s.key} className={`column ${cls}`} aria-label={`${s.label}, ${items.length} tasks`}
+              <section key={s.key} data-stage={s.key} className={`column ${cls}`} aria-label={`${s.label}, ${items.length} tasks`}
                 onDragOver={(e) => { if (canDrop(s.key)) { e.preventDefault(); setOver(s.key); } }}
                 onDragLeave={() => setOver(null)}
                 onDrop={(e) => { e.preventDefault(); setOver(null); if (drag && drag.stage !== s.key) move(drag, s.key); setDrag(null); }}>
                 <div className="column-head">
-                  <StageIcon stage={s.key} /> {s.label} <span className="n">{items.length}</span>
+                  <StageIcon stage={s.key} /> {s.label} <span className="n" key={items.length}>{items.length}</span>
                   {locked && <span className="lock" title={lockHelp[s.key]}><Icon.lock width={11} height={11} />{lockShort[s.key]}</span>}
                 </div>
                 <div className="column-body">
-                  {items.map((t) => (
-                    <TaskCard key={t.id} task={t} thumbs={thumbs} draggable={t.view === 'full'} dragging={drag?.id === t.id}
+                  {items.map((t, i) => (
+                    <TaskCard key={t.id} index={i} task={t} thumbs={thumbs} draggable={t.view === 'full'} dragging={drag?.id === t.id}
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDrag(t); }} onDragEnd={() => { setDrag(null); setOver(null); }} />
                   ))}
                   {!items.length && <div className="empty-col">{drag && locked ? lockHelp[s.key] : 'No tasks'}</div>}

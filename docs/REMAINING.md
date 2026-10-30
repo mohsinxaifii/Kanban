@@ -4,10 +4,10 @@ The app runs end to end today with its own accounts, database and live updates. 
 
 ## Needed before real use
 
-1. **Hosting.** A Render Blueprint (`render.yaml`) is included for Render's free plan, with the database in a free Turso database. You need a Render account and a Turso account (README → Deploying). Optionally add a custom domain such as `studio.designdimensions.com` and set `PUBLIC_URL` to it. Run one instance.
-2. **Database backups.** Turso keeps point-in-time history depending on plan; for extra safety schedule a periodic export (`turso db shell <db> .dump > backup.sql`) to your own storage.
-3. **Email for invitations.** Built in through Resend (README → Invitation emails); it needs a Resend account, a verified domain and two Render settings. Password reset by email and notification digests are not built yet; an administrator can issue a fresh invite link for pending invitations, and `npm run create-admin` can reset an administrator.
-4. **A real administrator account and real data.** Run `npm run create-admin`, invite the team, add real clients and projects, remove the demo data and set `DEMO_MODE=false`.
+1. **Hosting.** Runs on cPanel with PHP 8.1+ and a SQLite file in the home folder (README → Deploying on cPanel).
+2. **Database backups.** Include the `DATABASE_PATH` folder in cPanel backups, and keep an off-server copy.
+3. **Email.** Invitations and password resets go out from a cPanel mailbox (README → Emails). Administrators can also set anyone's password. Notification digests are not built yet.
+4. **Real data.** Moved over from Turso (README → Moving from Turso and Render). Set `DEMO_MODE` to `false` once demo accounts are no longer wanted.
 
 ## Recommended
 
@@ -18,7 +18,6 @@ The app runs end to end today with its own accounts, database and live updates. 
 
 ## Known limits of this version
 
-- Live updates and login rate limiting are held in memory, so the app should run as a single process.
-- On Render's free plan the app sleeps when idle and takes up to a minute to wake.
+- Live updates arrive within about 5 seconds (pages poll for changes).
 - Workflow stages and role defaults are defined in code (`server/workflow.js`, `server/permissions.js`). Per-person permissions and per-task approval chains are configurable in the app; editing the stage list itself is not.
 - Card thumbnails are off by default (Thumbnails toggle on the board). They come from Google Drive and only appear for people whose Google account can open the file; sample tasks have no real files, so they show none.

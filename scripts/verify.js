@@ -14,6 +14,9 @@ let server;
 
 // Stand-in for Google's token endpoint: the "code" carries the claims to return.
 import http from 'node:http';
+import net from 'node:net';
+import crypto from 'node:crypto';
+import { createClient } from '@libsql/client';
 const FAKE_GOOGLE_PORT = PORT + 500;
 const fakeGoogle = http.createServer((req, res) => {
   let body = '';
@@ -27,32 +30,53 @@ const fakeGoogle = http.createServer((req, res) => {
   });
 }).listen(FAKE_GOOGLE_PORT);
 
-// Stand-in for the Resend email API: records what would have been sent.
+// Stand-in SMTP server: records what would have been sent, and refuses @bounce.example.
 const sentEmails = [];
 const FAKE_EMAIL_PORT = PORT + 600;
-const fakeEmail = http.createServer((req, res) => {
-  let body = '';
-  req.on('data', (c) => { body += c; });
-  req.on('end', () => {
-    const msg = JSON.parse(body);
-    res.setHeader('Content-Type', 'application/json');
-    if (req.headers.authorization !== 'Bearer test-resend' || msg.to[0].endsWith('@bounce.example')) { res.statusCode = 422; return res.end(JSON.stringify({ message: 'Rejected by test server' })); }
-    sentEmails.push(msg);
-    res.end(JSON.stringify({ id: `e${sentEmails.length}` }));
+const decodeQP = (s) => s.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+const fakeEmail = net.createServer((sock) => {
+  let buf = '', inData = false, msg = { to: [] };
+  const say = (l) => sock.write(`${l}\r\n`);
+  say('220 test');
+  sock.on('data', (chunk) => {
+    buf += chunk;
+    let i;
+    while ((i = buf.indexOf('\r\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (inData) {
+        if (line === '.') { inData = false; const body = Buffer.from(decodeQP(msg.raw), 'latin1').toString('utf8'); sentEmails.push({ ...msg, text: body, html: body }); msg = { to: [] }; say('250 queued'); }
+        else msg.raw += `${line.replace(/^\./, '')}\n`;
+        continue;
+      }
+      const cmd = line.slice(0, 4).toUpperCase();
+      if (cmd === 'EHLO') say('250-test\r\n250 AUTH PLAIN LOGIN');
+      else if (cmd === 'HELO') say('250 test');
+      else if (cmd === 'AUTH') say(line.includes(Buffer.from('\0studio@example.com\0test-pass').toString('base64')) ? '235 ok' : '535 bad auth');
+      else if (cmd === 'MAIL') say('250 ok');
+      else if (cmd === 'RCPT') { const to = line.match(/<(.*)>/)[1]; if (to.endsWith('@bounce.example')) say('550 Rejected by test server'); else { msg.to.push(to); say('250 ok'); } }
+      else if (cmd === 'DATA') { inData = true; msg.raw = ''; say('354 go'); }
+      else if (cmd === 'QUIT') { say('221 bye'); sock.end(); }
+      else say('250 ok');
+    }
   });
 }).listen(FAKE_EMAIL_PORT);
 
-function startServer(extraEnv = {}) {
-  return new Promise((resolve, reject) => {
-    server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
-      env: { ...process.env, PORT: String(PORT), DATABASE_PATH: DB, DEMO_MODE: 'true', PUBLIC_URL: BASE, GOOGLE_DRIVE_API_KEY: '', TURSO_DATABASE_URL: '',
-        GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', GOOGLE_TOKEN_URL: `http://localhost:${FAKE_GOOGLE_PORT}/token`, RESET_WORKSPACE: '', RESEND_API_KEY: 'test-resend', EMAIL_FROM: 'Studio <studio@example.com>', RESEND_API_URL: `http://localhost:${FAKE_EMAIL_PORT}/emails`, ...extraEnv },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    server.stdout.on('data', (d) => { if (String(d).includes('studio on')) resolve(); });
-    server.stderr.on('data', (d) => process.stderr.write(d));
-    server.on('exit', (c) => c && reject(new Error(`server exited ${c}`)));
+// PHP's built-in server stands in for Apache on cPanel. PHP_BIN / PHP_ARGS pick the binary
+// and extra flags (for example -d extension=pdo_sqlite.so when it is not enabled by default).
+const PHP = process.env.PHP_BIN || 'php';
+const PHP_ARGS = (process.env.PHP_ARGS || '').split(' ').filter(Boolean);
+async function startServer(extraEnv = {}) {
+  server = spawn(PHP, [...PHP_ARGS, '-S', `localhost:${PORT}`, '-t', 'dist', 'api/router.php'], {
+    env: { ...process.env, PHP_CLI_SERVER_WORKERS: '4', DATABASE_PATH: DB, DEMO_MODE: 'true', PUBLIC_URL: BASE, GOOGLE_DRIVE_API_KEY: '',
+      GOOGLE_CLIENT_ID: 'test-client', GOOGLE_CLIENT_SECRET: 'test-secret', GOOGLE_TOKEN_URL: `http://localhost:${FAKE_GOOGLE_PORT}/token`, RESET_WORKSPACE: '', SMTP_HOST: '127.0.0.1', SMTP_PORT: String(FAKE_EMAIL_PORT), SMTP_USER: 'studio@example.com', SMTP_PASSWORD: 'test-pass', EMAIL_FROM: 'Studio <studio@example.com>', ...extraEnv },
+    stdio: ['ignore', 'ignore', 'pipe'],
   });
+  server.stderr.on('data', (d) => { if (/error|warning|fatal/i.test(String(d)) && !/Development Server|Accepted|Closing|\[200\]|\[20\d\]|\[30\d\]|\[40\d\]|\[50\d\]/.test(String(d))) process.stderr.write(d); });
+  for (let i = 0; i < 50; i++) {
+    try { if ((await fetch(`${BASE}/api/health`)).ok) return; } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error('PHP server did not start');
 }
 const stopServer = () => new Promise((r) => { server.once('exit', r); server.kill(); });
 
@@ -99,13 +123,8 @@ async function main() {
   const trail = projects.find((p) => p.name === 'Trail Series').id;
   const link = (v) => `https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQr${v}/view?usp=sharing`;
 
-  // Live update stream for Aanya, to confirm collaborators see changes without refreshing.
-  const events = [];
-  const ac = new AbortController();
-  fetch(`${BASE}/api/events`, { headers: { Cookie: aanya.cookie }, signal: ac.signal }).then(async (res) => {
-    const reader = res.body.getReader();
-    for (;;) { const { value, done } = await reader.read(); if (done) break; events.push(new TextDecoder().decode(value)); }
-  }).catch(() => {});
+  // Aanya's open page polls /changes; it must see both a change and a new notification.
+  const changes0 = (await aanya.get('/changes')).data;
 
   section('Example workflow, step 1: Kabir creates "Product launch reel"');
   expectStatus('Rohan (editor) cannot create tasks', await rohan.post('/tasks', { title: 'x', project_id: aurora }), 403);
@@ -287,9 +306,8 @@ async function main() {
   check('Deactivated people cannot sign in with Google', g6.location.includes('error=deactivated'));
 
   section('Live updates');
-  await new Promise((res) => setTimeout(res, 300));
-  check('Aanya\'s open session received live change events', events.join('').includes('"changed"') && events.join('').includes('"notification"'));
-  ac.abort();
+  const changes1 = (await aanya.get('/changes')).data;
+  check('Aanya\'s open page is told about changes and new notifications', changes1.seq > changes0.seq && changes1.notification > changes0.notification);
 
   section('Saved folders');
   r = await kabir.post('/saved/folders', { name: 'Launch refs' });
@@ -419,6 +437,46 @@ async function main() {
   const again = new Client('Again');
   expectStatus('Restarting with the same phrase does not wipe again', await again.login('owner@example.com', 'owner-password-1'), 200);
   check('Demo data is not seeded back after a reset', !(await again.get('/admin/users')).data.some((u) => u.is_demo));
+
+  section('Passwords');
+  expectStatus('Forgot password answers the same for unknown emails', await new Client('x').post('/auth/forgot', { email: 'nobody@example.com' }), 200);
+  expectStatus('Asking for a reset link', await new Client('x').post('/auth/forgot', { email: 'owner@example.com' }), 200);
+  const resetMail = sentEmails.findLast((m) => m.to[0] === 'owner@example.com');
+  const resetToken = resetMail?.text.match(/#\/reset\/([\w-]+)/)?.[1];
+  check('A reset link is emailed to the person', !!resetToken);
+  expectStatus('The reset link opens', await new Client('x').get(`/reset/${resetToken}`), 200);
+  expectStatus('A too-short new password is refused', await new Client('x').post(`/reset/${resetToken}`, { password: 'short' }), 400);
+  expectStatus('A new password is set through the link', await new Client('x').post(`/reset/${resetToken}`, { password: 'owner-password-2' }), 200);
+  expectStatus('The reset link works only once', await new Client('x').get(`/reset/${resetToken}`), 404);
+  expectStatus('Sessions on other devices are signed out after a reset', await again.get('/tasks'), 401);
+  const owner = new Client('Owner');
+  expectStatus('Signing in with the new password works', await owner.login('owner@example.com', 'owner-password-2'), 200);
+  expectStatus('The old password no longer works', await new Client('x').login('owner@example.com', 'owner-password-1'), 401);
+
+  r = await owner.post('/admin/users', { name: 'Pat Admin-set', email: 'pat@example.com', role: 'producer' });
+  const patId = r.data.id;
+  r = await owner.post(`/admin/users/${patId}/password`, { password: 'pat-password-1' });
+  check('An administrator sets a password for an invited person, who becomes active', r.status === 200 && r.data.status === 'active' && r.data.has_password === true);
+  const pat = new Client('Pat');
+  expectStatus('They can sign in with it', await pat.login('pat@example.com', 'pat-password-1'), 200);
+  expectStatus('Non-administrators cannot set other people\'s passwords', await pat.post(`/admin/users/${(await owner.get('/auth/me')).data.user.id}/password`, { password: 'hijack-password-1' }), 403);
+  expectStatus('The administrator changes it again', await owner.post(`/admin/users/${patId}/password`, { password: 'pat-password-2' }), 200);
+  expectStatus('Their open sessions are signed out', await pat.get('/tasks'), 401);
+  expectStatus('Signing in with the password set by the administrator', await pat.login('pat@example.com', 'pat-password-2'), 200);
+  expectStatus('Changing your own password needs the current one', await pat.post('/me/password', { current: 'wrong-password', password: 'pat-password-3' }), 400);
+  expectStatus('Changing your own password', await pat.post('/me/password', { current: 'pat-password-2', password: 'pat-password-3' }), 200);
+  expectStatus('…and you stay signed in', await pat.get('/tasks'), 200);
+
+  // Passwords saved by the earlier Node.js version (scrypt) must keep working.
+  const salt = crypto.randomBytes(16);
+  const legacy = `scrypt$${salt.toString('base64')}$${crypto.scryptSync('legacy-password-1', salt, 64).toString('base64')}`;
+  const dbc = createClient({ url: `file:${DB}` });
+  await dbc.execute({ sql: 'UPDATE users SET password_hash = ? WHERE email = ?', args: [legacy, 'pat@example.com'] });
+  expectStatus('A password saved by the earlier version still signs in', await new Client('x').login('pat@example.com', 'legacy-password-1'), 200);
+  const upgraded = (await dbc.execute({ sql: 'SELECT password_hash FROM users WHERE email = ?', args: ['pat@example.com'] })).rows[0][0];
+  check('…and is upgraded to the new hash format', String(upgraded).startsWith('$2y$'));
+  expectStatus('A wrong password against an earlier-version hash is refused', await new Client('x').login('owner@example.com', 'legacy-password-1'), 401);
+  dbc.close();
 
   await stopServer();
   const failed = results.filter((x) => x.ok === false);

@@ -5,3 +5,5 @@ data/
 *.db-*
 .env
 verify-output/
+release/
+api/config.php

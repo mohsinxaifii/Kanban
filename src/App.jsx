@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { api, ago } from './api.js';
 import { AppCtx, Avatar, usePopover } from './components/ui.jsx';
 import { Icon } from './components/icons.jsx';
-import { Login, AcceptInvite, Join } from './views/Auth.jsx';
+import { Login, AcceptInvite, Join, ResetPassword } from './views/Auth.jsx';
 import { Board } from './views/Board.jsx';
 import { MyWork } from './views/MyWork.jsx';
 import { Planner } from './views/Planner.jsx';
@@ -22,12 +23,22 @@ function parseHash() {
 function useRoute() {
   const [route, setRoute] = useState(parseHash);
   useEffect(() => {
-    const on = () => setRoute(parseHash());
+    const on = () => withTransition(() => setRoute(parseHash()));
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
   return route;
 }
+// Animate a state change with the browser's View Transitions (cards glide to their new
+// column, pages cross-fade). Skipped while someone is typing, without browser support, or
+// when the person prefers reduced motion.
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+export function withTransition(update) {
+  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+  if (!document.startViewTransition || reduceMotion.matches || typing || document.hidden) { update(); return; }
+  document.startViewTransition(() => flushSync(update));
+}
+
 export function go(path, params) {
   const q = params && [...params.keys()].length ? `?${params}` : '';
   window.location.hash = `${path}${q}`;
@@ -39,6 +50,7 @@ export function App() {
   useEffect(() => { api('/auth/me').then((r) => setMe(r.user)).catch(() => setMe(null)); }, []);
 
   if (route.path.startsWith('/join/')) return <Join token={route.path.split('/')[2]} />;
+  if (route.path.startsWith('/reset/')) return <ResetPassword token={route.path.split('/')[2]} onDone={(u) => { setMe(u); go('/my-work'); }} />;
   if (route.path.startsWith('/invite/')) return <AcceptInvite token={route.path.split('/')[2]} onDone={(u) => { setMe(u); go('/my-work'); }} />;
   if (me === undefined) return null;
   if (!me) return <Login onLogin={(u) => { setMe(u); }} />;
@@ -61,7 +73,7 @@ function Workspace({ me, setMe, route }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'err' ? 6500 : 3500);
   }, []);
   const reloadPeople = useCallback(() => api('/people').then(setPeople), []);
-  const reloadTasks = useCallback(() => api('/tasks').then(setTasks), []);
+  const reloadTasks = useCallback(() => api('/tasks').then((t) => withTransition(() => setTasks(t))), []);
   const reloadNotifications = useCallback(() => api('/notifications').then(setNotifications), []);
   const reloadAll = useCallback(async () => {
     try {
@@ -76,18 +88,30 @@ function Workspace({ me, setMe, route }) {
 
   useEffect(() => { reloadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live updates: the server only signals "something changed"; we refetch through the API.
-  const timer = useRef(null);
+  // Live updates: every few seconds the page asks whether anything changed (shared hosting
+  // cannot keep connections open), then refetches through the API.
+  const last = useRef(null);
   useEffect(() => {
-    const es = new EventSource('/api/events');
-    es.onmessage = (ev) => {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === 'notification') reloadNotifications();
-      clearTimeout(timer.current);
-      timer.current = setTimeout(reloadAll, 120);
+    let stop = false;
+    const check = async () => {
+      if (stop || document.hidden) return;
+      try {
+        const c = await api('/changes');
+        const prev = last.current;
+        last.current = c;
+        if (!prev) return;
+        if (c.notification !== prev.notification) reloadNotifications();
+        if (c.seq !== prev.seq) reloadAll();
+      } catch (e) {
+        if (e.status === 401) setMe(null);
+      }
     };
-    return () => es.close();
-  }, [reloadAll, reloadNotifications]);
+    check();
+    const id = setInterval(check, 5000);
+    const onShow = () => { if (!document.hidden) check(); };
+    document.addEventListener('visibilitychange', onShow);
+    return () => { stop = true; clearInterval(id); document.removeEventListener('visibilitychange', onShow); };
+  }, [reloadAll, reloadNotifications, setMe]);
 
   const openTask = useCallback((id) => {
     const p = new URLSearchParams(route.params);
@@ -100,19 +124,19 @@ function Workspace({ me, setMe, route }) {
     can: (perm) => me.permissions.includes(perm),
   }), [me, meta, people, tasks, version, toast, reloadAll, reloadPeople, reloadTasks, openTask]);
 
-  if (!meta) return null;
+  if (!meta) return <div className="booting" aria-label="Loading"><img src="/dd-mark.png" alt="" /></div>;
   const taskId = Number(route.params.get('task')) || null;
   const myActions = tasks.filter((t) => t.next_action?.user?.id === me.id && t.view === 'full').length;
   const requests = meta.pendingRequests || 0;
   const myApprovals = tasks.filter((t) => t.next_action?.kind === 'approve' && t.next_action.user?.id === me.id).length;
 
   const views = {
-    '/board': { title: 'Team Board', el: <Board /> },
-    '/my-work': { title: 'My Work', el: <MyWork /> },
-    '/planner': { title: 'Weekly Planner', el: <Planner /> },
-    '/approvals': { title: 'Approvals', el: <Approvals /> },
-    '/saved': { title: 'Saved', el: <Saved /> },
-    '/settings': { title: 'Settings', el: <Settings /> },
+    '/board': { title: 'Team Board', sub: 'Every piece of work, from brief to delivery', el: <Board /> },
+    '/my-work': { title: 'My Work', sub: 'What needs you, and what you’re waiting on', el: <MyWork /> },
+    '/planner': { title: 'Weekly Planner', sub: 'Who is making what, week by week', el: <Planner /> },
+    '/approvals': { title: 'Approvals', sub: 'Versions waiting for a decision', el: <Approvals /> },
+    '/saved': { title: 'Saved', sub: 'Your private folders of tasks and links', el: <Saved /> },
+    '/settings': { title: 'Settings', sub: 'People, projects, your account and appearance', el: <Settings /> },
   };
   const view = views[route.path === '/team' ? '/settings' : route.path] || views['/board'];
 
@@ -125,7 +149,7 @@ function Workspace({ me, setMe, route }) {
             <span className="workspace-label">Creative production{me.is_demo ? ' · Demo workspace' : ''}</span>
           </div>
           {ctx.can('tasks.create') && (
-            <button className="btn" data-tour="new-task" style={{ justifyContent: 'flex-start', margin: '0 0 8px' }} onClick={() => setCreating(true)}><Icon.plus /> New task</button>
+            <button className="btn new-task" data-tour="new-task" onClick={() => setCreating(true)}><Icon.plus /> New task</button>
           )}
           <NavItem tour="my-work" path="/my-work" route={route} icon={Icon.inbox} label="My Work" count={myActions} hot={myActions > 0} />
           <NavItem tour="approvals" path="/approvals" route={route} icon={Icon.check} label="Approvals" count={myApprovals} hot={myApprovals > 0} />
@@ -145,7 +169,7 @@ function Workspace({ me, setMe, route }) {
         </aside>
         <main className="main">
           <div className="topbar">
-            <h1>{view.title}</h1>
+            <div className="titles"><h1>{view.title}</h1><span className="sub">{view.sub}</span></div>
             <select className="mobile-nav select" aria-label="Go to view" value={route.path === '/team' ? '/settings' : route.path} onChange={(e) => go(e.target.value)}>
               {Object.entries(views).map(([k, v]) => <option key={k} value={k}>{v.title}</option>)}
             </select>
@@ -153,7 +177,7 @@ function Workspace({ me, setMe, route }) {
             {ctx.can('work.oversee') && <ExportReport />}
             <LiveDot />
           </div>
-          <div className="content">{view.el}</div>
+          <div className="content"><div className="view-enter" key={view.title}>{view.el}</div></div>
         </main>
       </div>
       {taskId && <TaskPanel id={taskId} onClose={() => openTask(null)} />}
@@ -194,7 +218,7 @@ function ExportReport() {
 }
 
 function LiveDot() {
-  return <span className="hint" title="Changes from teammates appear automatically" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 6, height: 6, borderRadius: 3, background: '#30a46c' }} />Live</span>;
+  return <span className="hint" title="Changes from teammates appear automatically" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="live-dot" />Live</span>;
 }
 
 function Notifications({ items, reload, openTask, canManage }) {

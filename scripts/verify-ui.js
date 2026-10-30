@@ -17,10 +17,10 @@ let n = 0;
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '  PASS' : '  FAIL'}  ${name}${ok ? '' : `  -> ${detail}`}`); };
 
-const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
-  env: { ...process.env, PORT: String(PORT), DATABASE_PATH: DB, DEMO_MODE: 'true' }, stdio: ['ignore', 'pipe', 'inherit'],
+const server = spawn(process.env.PHP_BIN || 'php', [...(process.env.PHP_ARGS || '').split(' ').filter(Boolean), '-S', `localhost:${PORT}`, '-t', 'dist', 'api/router.php'], {
+  env: { ...process.env, PHP_CLI_SERVER_WORKERS: '4', DATABASE_PATH: DB, DEMO_MODE: 'true' }, stdio: ['ignore', 'ignore', 'ignore'],
 });
-await new Promise((r) => server.stdout.on('data', (d) => String(d).includes('studio on') && r()));
+for (let i = 0; i < 50; i++) { try { if ((await fetch(`${BASE}api/health`)).ok) break; } catch { /* starting */ } await new Promise((r) => setTimeout(r, 100)); }
 
 const browser = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {});
 async function as(name) {

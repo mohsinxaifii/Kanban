@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { api } from '../api.js';
+import { useApp } from '../components/ui.jsx';
 import { getPref, setPref, TEXT_SIZES, FONTS } from '../theme.js';
 
 // Personal look of the app. Saved on this device and browser only.
@@ -43,6 +45,43 @@ export function Appearance() {
           <p style={{ margin: '8px 0 0' }}>Cut the 45s hero film into a 15s and a 6s version for paid social. End card: “Aurora. Hear the room.”</p>
         </div>
         <p className="hint">These settings are saved on this device and browser only.</p>
+      </section>
+    </div>
+  );
+}
+
+// Settings → Your account: change your own password.
+export function Account() {
+  const { me, toast } = useApp();
+  const [f, setF] = useState({ current: '', password: '', again: '' });
+  const [error, setError] = useState('');
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  async function save(e) {
+    e.preventDefault();
+    setError('');
+    if (f.password !== f.again) { setError('The two new passwords do not match.'); return; }
+    try {
+      await api('/me/password', { method: 'POST', body: { current: f.current, password: f.password } });
+      setF({ current: '', password: '', again: '' });
+      toast('Password changed. Other devices were signed out.');
+    } catch (err) { setError(err.message); }
+  }
+  return (
+    <div className="appearance">
+      <section>
+        <h3>{me.name}</h3>
+        <div className="hint">{me.email} · {me.title || 'No job title'}</div>
+      </section>
+      <section>
+        <h3>Change password</h3>
+        <div className="hint">Forgot your current one? Sign out and use “Forgot password?”, or ask an administrator.</div>
+        <form className="stack" style={{ maxWidth: 380, marginTop: 12 }} onSubmit={save}>
+          <div className="field"><label htmlFor="a-cur">Current password</label><input id="a-cur" className="input" type="password" autoComplete="current-password" value={f.current} onChange={set('current')} required /></div>
+          <div className="field"><label htmlFor="a-new">New password</label><input id="a-new" className="input" type="password" minLength={10} autoComplete="new-password" value={f.password} onChange={set('password')} required /><span className="hint">At least 10 characters.</span></div>
+          <div className="field"><label htmlFor="a-again">Repeat new password</label><input id="a-again" className="input" type="password" minLength={10} autoComplete="new-password" value={f.again} onChange={set('again')} required /></div>
+          {error && <div className="error-text" role="alert">{error}</div>}
+          <div><button className="btn primary" type="submit">Change password</button></div>
+        </form>
       </section>
     </div>
   );

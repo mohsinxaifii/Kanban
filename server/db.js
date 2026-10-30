@@ -1,20 +1,14 @@
-// Persistence via libSQL. Locally it is a plain SQLite file; in production it can
-// point at a hosted Turso database (TURSO_DATABASE_URL + TURSO_AUTH_TOKEN), so the
-// app runs on hosts without a persistent disk.
+// Persistence in a single SQLite file (through libSQL), kept on the server's own disk.
+// On cPanel, point DATABASE_PATH at a folder outside public_html so it is never served.
 import { createClient } from '@libsql/client';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const remoteUrl = process.env.TURSO_DATABASE_URL;
-let url = remoteUrl;
-if (!url) {
-  const file = process.env.DATABASE_PATH || path.resolve('data/studio.db');
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  url = `file:${file}`;
-}
-export const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
-export const dbLocation = remoteUrl ? remoteUrl.replace(/\?.*$/, '') : url;
+const file = path.resolve(process.env.DATABASE_PATH || 'data/studio.db');
+fs.mkdirSync(path.dirname(file), { recursive: true });
+export const client = createClient({ url: `file:${file}` });
+export const dbLocation = file;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -177,10 +171,8 @@ CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, read);
 `;
 
 export async function initDb() {
-  if (!remoteUrl) {
-    await client.execute('PRAGMA journal_mode = WAL');
-    await client.execute('PRAGMA busy_timeout = 5000');
-  }
+  await client.execute('PRAGMA journal_mode = WAL');
+  await client.execute('PRAGMA busy_timeout = 5000');
   await client.execute('PRAGMA foreign_keys = ON');
   await client.executeMultiple(SCHEMA);
   // Columns added after the first release.

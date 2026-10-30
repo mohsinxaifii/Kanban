@@ -27,7 +27,7 @@ export function Planner() {
     <div className="page" style={{ maxWidth: 'none' }}>
       <div className="row" style={{ marginBottom: 12 }}>
         <span className="hint">Group by</span>
-        <select className="filter on" value={by} onChange={(e) => setBy(e.target.value)} aria-label="Group by">
+        <select className="filter" value={by} onChange={(e) => setBy(e.target.value)} aria-label="Group by">
           <option value="assignee">Assigned person</option>
           <option value="owner">Current action owner</option>
         </select>

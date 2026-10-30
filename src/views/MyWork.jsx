@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useApp, Avatar, StatusLine, Due } from '../components/ui.jsx';
 import { StageIcon } from '../components/icons.jsx';
 import { taskKey, first } from '../api.js';
@@ -16,6 +17,35 @@ export function TaskRow({ task }) {
       <span className="person" style={{ fontSize: 12, color: 'var(--muted)' }}><Avatar user={task.creator} size="xs" /><span>by {first(task.creator)}</span></span>
       <Due date={task.due_date} stage={task.stage} />
     </div>
+  );
+}
+
+// Counts up from 0 on first show, then eases to new values.
+function CountUp({ value }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setN(value); return undefined; }
+    let raf; const start = performance.now(); const from = n;
+    const step = (t) => {
+      const p = Math.min(1, (t - start) / 700);
+      setN(Math.round(from + (value - from) * (1 - (1 - p) ** 3)));
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  return n;
+}
+
+// The single most urgent thing, so there is always one obvious place to start.
+function NextUp({ task }) {
+  const { openTask } = useApp();
+  return (
+    <button className="next-up" onClick={() => openTask(task.id)}>
+      <span className="eyebrow">Start here</span>
+      <span className="next-up-title">{task.title}</span>
+      <span className="next-up-meta"><StatusLine task={task} compact /><Due date={task.due_date} stage={task.stage} /></span>
+    </button>
   );
 }
 
@@ -45,9 +75,29 @@ export function MyWork() {
   const waiting = open.filter((t) => involved(t) && !mine(t)).sort(byDue);
   const deliveredToMe = tasks.filter((t) => t.stage === 'delivered' && t.recipient?.id === me.id);
 
+  const today = new Date().toISOString().slice(0, 10);
+  const weekEnd = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+  const minePlus = [...approvals, ...actions];
+  const overdue = minePlus.filter((t) => t.due_date && t.due_date < today).length;
+  const dueWeek = minePlus.filter((t) => t.due_date && t.due_date >= today && t.due_date <= weekEnd).length;
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const next = minePlus.slice().sort(byDue)[0];
   return (
     <div className="page">
-      <p className="lede">Everything that involves you, {me.name.split(' ')[0]}. Updates from teammates appear here automatically.</p>
+      <header className="hero">
+        <div>
+          <h2 className="hero-title">{hello}, {me.name.split(' ')[0]}.</h2>
+          <p className="lede">{minePlus.length ? `${minePlus.length} ${minePlus.length === 1 ? 'thing needs' : 'things need'} you today.` : 'You’re all caught up. Nice.'}</p>
+        </div>
+        <div className="stats">
+          <div className={`stat ${minePlus.length ? 'hot' : ''}`}><b><CountUp value={minePlus.length} /></b><span>Your turn</span></div>
+          <div className="stat"><b><CountUp value={approvals.length} /></b><span>To approve</span></div>
+          <div className={`stat ${overdue ? 'bad' : ''}`}><b><CountUp value={overdue} /></b><span>Overdue</span></div>
+          <div className="stat"><b><CountUp value={dueWeek} /></b><span>Due in 7 days</span></div>
+        </div>
+      </header>
+      {next && <NextUp task={next} />}
       {me.role === 'recipient' && <Section title="Delivered to me" items={deliveredToMe} empty="Nothing has been delivered to you yet." />}
       {(can('review.approve') || approvals.length > 0) && <Section title="Approvals waiting for me" items={approvals} empty="No submissions are waiting for your approval." />}
       {(me.role !== 'recipient' || actions.length > 0) && <Section title="Needs my action" items={actions} empty="Nothing needs your action right now." />}

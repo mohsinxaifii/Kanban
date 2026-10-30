@@ -1,0 +1,4 @@
+# Only index.php is reachable from the web; settings and libraries are not.
+<FilesMatch "^(config|config\.sample|router)\.php$">
+  Require all denied
+</FilesMatch>

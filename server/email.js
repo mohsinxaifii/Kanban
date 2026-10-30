@@ -1,9 +1,26 @@
-// Invitation emails through Resend (https://resend.com), which uses HTTPS rather than
-// SMTP, so it also works on hosts that block outgoing mail ports (such as Render's free plan).
-// Without RESEND_API_KEY nothing is sent and admins copy the invite link themselves.
-const API_URL = process.env.RESEND_API_URL || 'https://api.resend.com/emails'; // override only for tests
+// Invitation emails through an ordinary mailbox over SMTP, such as one created in cPanel
+// → Email Accounts on the same server. Without SMTP_HOST and EMAIL_FROM nothing is sent
+// and admins copy the invite link themselves.
+import nodemailer from 'nodemailer';
 
-export const emailEnabled = () => !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+export const emailEnabled = () => !!(process.env.SMTP_HOST && process.env.EMAIL_FROM);
+
+let transport;
+function mailer() {
+  if (!transport) {
+    const port = Number(process.env.SMTP_PORT || 465);
+    transport = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port,
+      secure: port === 465, // 465 = TLS from the start; 587 upgrades with STARTTLS
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
+  }
+  return transport;
+}
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -64,16 +81,10 @@ ${publicUrl}`;
 async function sendEmail({ to, subject, text, html }) {
   if (!emailEnabled()) return { status: 'not_configured' };
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: process.env.EMAIL_FROM, to: [to], subject, text, html }),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (res.ok) return { status: 'sent' };
-    const body = await res.json().catch(() => ({}));
-    return { status: 'failed', error: body.message || `Email service answered ${res.status}` };
+    await mailer().sendMail({ from: process.env.EMAIL_FROM, to, subject, text, html });
+    return { status: 'sent' };
   } catch (e) {
-    return { status: 'failed', error: e.name === 'TimeoutError' ? 'The email service did not respond.' : 'Could not reach the email service.' };
+    if (['ETIMEDOUT', 'ECONNECTION', 'ESOCKET', 'ECONNREFUSED'].includes(e.code)) return { status: 'failed', error: 'Could not reach the mail server.' };
+    return { status: 'failed', error: e.response || e.message || 'The mail server refused the message.' };
   }
 }

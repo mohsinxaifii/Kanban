@@ -1,8 +1,9 @@
 const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' };
 
+// One quiet colour for every stage; the circle's fill shows how far along it is.
 export const STAGE_COLORS = {
-  backlog: '#a3a5ad', planned: '#7a7c85', in_progress: '#d9a300', in_review: '#4f46e5',
-  changes_requested: '#e5640f', ready_to_deliver: '#0b6bcb', delivered: '#1f7a46',
+  backlog: 'var(--faint)', planned: 'var(--muted)', in_progress: 'var(--text-2)', in_review: 'var(--text-2)',
+  changes_requested: 'var(--text-2)', ready_to_deliver: 'var(--text)', delivered: 'var(--text)',
 };
 
 // Linear-style progress circles for each workflow stage.
@@ -29,7 +30,7 @@ export function PriorityIcon({ priority, size = 14 }) {
   if (priority === 'urgent') {
     return (
       <svg width={size} height={size} viewBox="0 0 14 14" role="img" aria-label={label}><title>{label}</title>
-        <rect x="1" y="1" width="12" height="12" rx="3" fill="#e5484d" /><path d="M7 3.8v3.8M7 9.8v.2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+        <rect x="1" y="1" width="12" height="12" rx="3" style={{ fill: 'var(--blocked)' }} /><path d="M7 3.8v3.8M7 9.8v.2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
     );
   }
@@ -68,5 +69,7 @@ export const Icon = {
   trash: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 9h5.8l.6-9" /></svg>,
   download: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M8 2.5v8M4.8 7.5L8 10.7l3.2-3.2M2.8 13.5h10.4" /></svg>,
   settings: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="8" cy="8" r="2.2" /><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" /></svg>,
+  filter: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M2.5 4h11M4.5 8h7M6.5 12h3" /></svg>,
+  sparkle: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><path d="M8 2v3M8 11v3M2 8h3M11 8h3M4 4l1.8 1.8M10.2 10.2L12 12M12 4l-1.8 1.8M5.8 10.2L4 12" /></svg>,
   search: (p) => <svg viewBox="0 0 16 16" {...S} {...p}><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>,
 };

@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { api, fmtDate, ago } from '../api.js';
 import { useApp, Avatar, Modal, Notice } from '../components/ui.jsx';
 import { Icon } from '../components/icons.jsx';
-import { Appearance } from './Appearance.jsx';
+import { Appearance, Account } from './Appearance.jsx';
 
 // Settings: Appearance for everyone; people, projects and roles for those who manage users.
 export function Settings() {
   const { can } = useApp();
   const manage = can('users.manage');
-  const [tab, setTab] = useState(manage ? 'people' : 'appearance');
-  const tabs = manage ? [['people', 'People'], ['projects', 'Projects'], ['roles', 'Roles and permissions'], ['appearance', 'Appearance']] : [['appearance', 'Appearance']];
+  const [tab, setTab] = useState(manage ? 'people' : 'account');
+  const tabs = [...(manage ? [['people', 'People'], ['projects', 'Projects'], ['roles', 'Roles and permissions']] : []), ['account', 'Your account'], ['appearance', 'Appearance']];
   return (
     <div className="page">
       <div className="tabs">
@@ -20,6 +20,7 @@ export function Settings() {
       {manage && tab === 'people' && <People />}
       {manage && tab === 'projects' && <Projects />}
       {manage && tab === 'roles' && <Roles />}
+      {tab === 'account' && <Account />}
       {tab === 'appearance' && <Appearance />}
     </div>
   );
@@ -65,7 +66,7 @@ function People() {
         </>
       )}
       <div className="row" style={{ marginBottom: 12 }}>
-        <input className="search" placeholder="Search people" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search people" />
+        <div className="search-wrap"><Icon.search width={14} height={14} /><input className="search" placeholder="Search people" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search people" /></div>
         <span style={{ flex: 1 }} />
         <button className="btn primary" onClick={() => setAdding(true)}><Icon.plus /> Add person</button>
       </div>
@@ -203,6 +204,7 @@ function PersonModal({ user, onClose, onSaved }) {
     </>}>
       {pending && <Notice tone="info">{user.name} signed up with the team link as <b>{user.title}</b>. Choose their role, permissions and projects below, then approve. They cannot sign in until you do.</Notice>}
       {user?.is_demo ? <Notice tone="info">This is a fictional demo account used with the sample work.</Notice> : null}
+      {!isNew && !pending && <SetPassword user={user} onSaved={onSaved} />}
       {user?.status === 'invited' && user.invite_url && (
         <div className="field"><span className="label">Invite link</span>
           <div className="copy-row"><input className="input" readOnly value={user.invite_url} onFocus={(e) => e.target.select()} aria-label="Invite link" />
@@ -303,5 +305,46 @@ function Roles() {
       </div>
       <p className="hint">Account managers can approve only when explicitly authorised. Recipients see only work delivered to them, and review only when given approval permission and named as an approver.</p>
     </>
+  );
+}
+
+// Administrators can set a new password for anyone (for example when someone is locked
+// out). Invited people become active; the person is signed out everywhere else.
+function SetPassword({ user, onSaved }) {
+  const { toast, reloadAll } = useApp();
+  const [open, setOpen] = useState(false);
+  const [pw, setPw] = useState('');
+  const [show, setShow] = useState(false);
+  async function save(e) {
+    e.preventDefault();
+    try {
+      const u = await api(`/admin/users/${user.id}/password`, { method: 'POST', body: { password: pw } });
+      toast(`New password set for ${u.name}. Share it with them privately.`);
+      setPw(''); setOpen(false); reloadAll(); onSaved(u);
+    } catch (err) { toast(err.message, 'err'); }
+  }
+  const suggest = () => {
+    const words = ['amber', 'canvas', 'frame', 'pixel', 'studio', 'render', 'kerning', 'palette', 'vector', 'motion', 'layer', 'grain'];
+    const pick = () => words[crypto.getRandomValues(new Uint32Array(1))[0] % words.length];
+    setPw(`${pick()}-${pick()}-${pick()}-${crypto.getRandomValues(new Uint32Array(1))[0] % 90 + 10}`); setShow(true);
+  };
+  return (
+    <div className="field">
+      <span className="label">Password</span>
+      {!open ? (
+        <div className="row">
+          <span className="hint" style={{ flex: 1 }}>{user.has_password ? 'This person has a password.' : 'No password yet.'} You can set a new one for them.</span>
+          <button type="button" className="btn" onClick={() => setOpen(true)}><Icon.lock width={13} height={13} /> Set password</button>
+        </div>
+      ) : (
+        <form className="row" onSubmit={save}>
+          <input className="input" type={show ? 'text' : 'password'} minLength={10} autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="At least 10 characters" aria-label={`New password for ${user.name}`} required autoFocus />
+          <button type="button" className="btn ghost" onClick={suggest} title="Make an easy-to-share password">Suggest</button>
+          <button type="button" className="btn ghost" onClick={() => setShow((v) => !v)}>{show ? 'Hide' : 'Show'}</button>
+          <button type="button" className="btn" onClick={() => { setOpen(false); setPw(''); }}>Cancel</button>
+          <button type="submit" className="btn primary">Save password</button>
+        </form>
+      )}
+    </div>
   );
 }

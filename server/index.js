@@ -18,8 +18,7 @@ const PORT = Number(process.env.PORT || 3000);
 const DEMO_MODE = (process.env.DEMO_MODE ?? 'true') !== 'false';
 const COOKIE = 'dd_session';
 const SESSION_DAYS = 14;
-// Render provides RENDER_EXTERNAL_URL automatically.
-const PUBLIC_URL = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 
 // One-time wipe: set RESET_WORKSPACE to a phrase of your choice and every person,
 // task and project is deleted on the next start. The same phrase is then needed to
@@ -164,7 +163,7 @@ app.post('/api/auth/setup', async (req, res) => {
   if (setupAttempts.n >= 10) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
   const code = str(req.body.code, 500);
   const a = Buffer.from(phraseHash(code)); const b = Buffer.from(phraseHash(RESET_PHRASE));
-  if (!crypto.timingSafeEqual(a, b)) { setupAttempts.n += 1; return res.status(403).json({ error: 'That setup phrase is not right. Use the RESET_WORKSPACE value from Render.' }); }
+  if (!crypto.timingSafeEqual(a, b)) { setupAttempts.n += 1; return res.status(403).json({ error: 'That setup phrase is not right. Use the RESET_WORKSPACE value from the server settings.' }); }
   const name = str(req.body.name, 120);
   const email = str(req.body.email, 200).toLowerCase();
   const pw = str(req.body.password, 200);
@@ -1061,7 +1060,7 @@ app.post('/api/admin/users/:id/reinvite', auth, need('users.manage'), async (req
 app.post('/api/admin/users/:id/send-invite', auth, need('users.manage'), async (req, res) => {
   const row = await one('SELECT * FROM users WHERE id = ?', Number(req.params.id));
   if (!row || row.status !== 'invited') bad('Only pending invitations can be emailed.');
-  if (!emailEnabled()) bad('Email sending is not set up. Add RESEND_API_KEY and EMAIL_FROM in Render.');
+  if (!emailEnabled()) bad('Email sending is not set up. Add SMTP_HOST and EMAIL_FROM to the server settings.');
   const email = await emailInvite(row, req.user);
   if (email.status !== 'sent') throw new HttpError(502, `The invitation email could not be sent: ${email.error}`);
   res.json({ ...adminView(row), invite_email: email });

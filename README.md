@@ -18,31 +18,30 @@ Internal creative-production workspace for Design Dimensions: a Linear-style boa
 
 ## Stack
 
-- Node.js 22.13+ with Express 5 and SQLite via libSQL: a local file in development, or a hosted Turso database in production
-- React 18 + Vite front end, Inter typeface (bundled)
-- Server-Sent Events for live updates
-- Sign in with Google or with email and password (scrypt hashes, HttpOnly session cookies); invitation links for new people
+- PHP 8.1+ (no frameworks, no Composer) with SQLite through PDO: one database file on the server. Runs on ordinary cPanel shared hosting.
+- React 18 + Vite front end, built to static files, Inter typeface (bundled)
+- Live updates: open pages check for changes every few seconds
+- Sign in with Google or with email and password (bcrypt hashes; hashes from the earlier Node.js version are still accepted and upgraded on next sign-in), HttpOnly session cookies, invitation links, **forgot password** emails, and **administrators can set anyone's password** (Settings → People → Edit)
+- Everyone can change their own password in Settings → Your account
 - Settings → Appearance: light, dark or system theme, four text sizes and four text styles (saved per device)
 
 ## Run it locally
 
+Needs Node.js (only to build the front end) and PHP 8.1+ with the `pdo_sqlite` extension.
+
 ```bash
 npm install
-npm run build      # build the front end into dist/
-npm start          # http://localhost:3000
+npm run build                         # front end into dist/
+php -S localhost:3000 -t dist api/router.php   # http://localhost:3000
 ```
 
-For development with hot reload (API on :3000, UI on http://localhost:5173):
+For development with hot reload: `npm run dev` (UI on http://localhost:5173, API on :3000).
 
-```bash
-npm run dev
-```
-
-On first start the server creates `data/studio.db` and, while `DEMO_MODE` is on (the default), seeds the demo workspace.
+Without `api/config.php` the app uses `data/studio.db` next to the project and seeds the demo workspace.
 
 ### Demo accounts
 
-The login page lists the fictional demo accounts. All use the password `demo-studio-2026` (change with `DEMO_PASSWORD`).
+While `DEMO_MODE` is on, the login page lists fictional demo accounts. All use the password `demo-studio-2026`.
 
 | Person | Role | Notes |
 | --- | --- | --- |
@@ -53,77 +52,47 @@ The login page lists the fictional demo accounts. All use the password `demo-stu
 | Nisha Rao | Marketing Recipient | Access to the Halden Audio projects only |
 | Studio Admin | Administrator | Manages people and permissions |
 
-They use the reserved `demo.designdimensions.test` domain, are labelled **Demo** everywhere, and the sample tasks are labelled **Sample**. The client names (Halden Audio, Saffron & Sage, Northpeak Outdoors) are fictional.
-
 ### Starting over with an empty workspace
 
-To delete every person, task, project and saved item and start fresh (for example on the live site):
-
-1. In Render → your service → **Environment**, add `RESET_WORKSPACE` with a phrase only you know (for example `fresh-start-oct-2026`), and save. Render redeploys.
-2. On start the server deletes everything once for that phrase. The demo data does not come back.
-3. Open the site. It shows **Set up your studio**: enter your name, email, a password and the same phrase. You are signed in as the administrator.
-4. Go to **Settings → People → Add person** for each teammate; each one gives you an invite link to send them.
-
-Leaving `RESET_WORKSPACE` in place is safe: the same phrase never wipes twice. Changing it to a new phrase wipes again, so delete the variable once you are set up.
-
-### Going live with real accounts
-
-1. Create a real administrator:
-   ```bash
-   npm run create-admin -- "Your Name" you@designdimensions.com
-   ```
-2. Sign in as that administrator, open **Settings → People → Add person** and invite the team. Each invite produces a link; email sending is not configured yet, so send the link yourself. People get access only after accepting.
-3. Add your real clients and projects in **Settings → Projects**.
-4. Remove the sample people and work in **Settings → Demo data**, and set `DEMO_MODE=false` so they are not seeded into a new database.
+Set `RESET_WORKSPACE` in `api/config.php` to a phrase only you know. On the next request everything is deleted once for that phrase and the site shows **Set up your studio**, where you create the first administrator with the same phrase. Empty it again afterwards.
 
 ## Configuration
 
-Copy `.env.example` to `.env` (loaded automatically by `npm start`).
+Settings live in `api/config.php` (copy `api/config.sample.php`). It is never served to browsers and is not part of the upload zip, so updates keep it.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3000` | Port to listen on |
-| `PUBLIC_URL` | `http://localhost:3000` | Used in invite links. An `https://` URL also marks cookies `Secure` |
-| `DATABASE_PATH` | `./data/studio.db` | Local SQLite file, used when no Turso URL is set |
-| `TURSO_DATABASE_URL` | empty | Hosted database (`libsql://…`). When set, it is used instead of the local file |
-| `TURSO_AUTH_TOKEN` | empty | Token for the Turso database |
-| `DEMO_MODE` | `true` | Seed the demo workspace once per database. When `false`, demo accounts cannot sign in |
-| `DEMO_PASSWORD` | `demo-studio-2026` | Password for demo accounts |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | empty | Optional. Enables “Continue with Google”. See Google sign-in below |
-| `GOOGLE_DRIVE_API_KEY` | empty | Optional. See Google Drive below |
-| `RESEND_API_KEY` / `EMAIL_FROM` | empty | Optional. Emails invitations. See Invitation emails below |
-| `RESET_WORKSPACE` | empty | A phrase. Deletes all data once per phrase and opens the first-administrator setup screen (see above) |
+| Setting | Purpose |
+| --- | --- |
+| `PUBLIC_URL` | The site address, used in invite and reset links. Taken from the request if empty |
+| `DATABASE_PATH` | The SQLite file. Keep it outside `public_html` |
+| `DEMO_MODE` | `true` seeds and allows the fictional demo accounts; `false` turns them off |
+| `EMAIL_FROM` | Sender for invitations and password resets. Without it, no email is sent and admins copy links themselves |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | Optional: send through a mailbox over SMTP instead of the server's own mail |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional: “Continue with Google” |
+| `GOOGLE_DRIVE_API_KEY` | Optional: checks whether submitted Drive links are shared publicly |
+| `RESET_WORKSPACE` | A phrase. Deletes all data once per phrase (see above) |
 
 ## Verification
 
-Two scripts start their own server on a fresh temporary database:
+Both scripts start PHP's built-in server on a fresh temporary database:
 
 ```bash
-npm run verify       # 159 API checks with separate signed-in accounts
-npm run build && npm run verify:ui   # browser walkthrough (needs a Playwright Chromium, or CHROME_PATH=/path/to/chrome)
+npm run verify                         # 181 API checks with separate signed-in accounts
+npm run build && npm run verify:ui     # browser walkthrough (needs a Playwright Chromium, or CHROME_PATH=…)
 ```
 
-`npm run verify` runs the full example (Kabir creates “Product launch reel”, Rohan submits v1, Aanya requests changes, Rohan submits v2, Aanya approves, Kabir delivers to Nisha) and checks, among other things, that:
+If your PHP has no `pdo_sqlite` loaded, pass it in: `PHP_ARGS="-d extension=/path/to/pdo_sqlite.so" npm run verify`.
 
-- unassigned or unauthorised people cannot see restricted tasks, approve, submit or record delivery;
-- stages cannot be skipped by moving cards, including straight to Ready to Deliver or Delivered;
-- every decision is tied to a specific version, earlier versions and decisions are preserved, and a new version (even after approval) restarts approval at step 1;
-- removing someone's approval permission stops them approving immediately, even on a step they are named on;
-- invitations, deactivation (with immediate sign-out) and project-level access work;
-- open sessions receive live updates, and everything persists across a server restart.
+They cover the full workflow (create → submit → request changes → resubmit → approve → deliver), permissions and project access, stage rules, invitations, the sign-up link, password reset, administrator-set passwords, sign-in with passwords from the earlier version, live-update signals and persistence. `npm run verify` writes `verify-output/verification-report.md`.
 
-It writes `verify-output/verification-report.md`. The UI walkthrough saves screenshots to `verify-output/screens/`.
+## Emails (invitations and password resets)
 
-## Invitation emails
+With `EMAIL_FROM` set, adding a person emails their invitation link, and **Forgot password?** on the sign-in page emails a reset link (valid for one hour, works once). Invite links are always shown to the administrator as well.
 
-When `RESEND_API_KEY` and `EMAIL_FROM` are set, adding a person emails them their invitation link, and **New link** and **Email again** in their Settings entry email it too. The link is always shown as well, so you can still copy it. If sending fails, the invitation is kept and the error is shown.
+1. cPanel → **Email Accounts → Create**, for example `studio@designdimensions.in`.
+2. Put that address in `EMAIL_FROM`. That is enough: mail goes out through the server.
+3. If emails land in spam, also fill in `SMTP_HOST` (often `mail.designdimensions.in`), `SMTP_PORT` `465`, `SMTP_USER` (the full address) and `SMTP_PASSWORD`.
 
-The app uses [Resend](https://resend.com) because it sends over HTTPS; Render's free plan blocks the usual mail (SMTP) ports. Resend's free tier covers 3,000 emails a month.
-
-1. Sign up at resend.com.
-2. **Domains → Add domain**, enter your domain (for example `designdimensions.in`), and add the DNS records it lists at your domain registrar. Wait until it shows **Verified**. Until then Resend only delivers to your own address.
-3. **API Keys → Create API key** with *Sending access*. Copy it.
-4. In Render → Environment add `RESEND_API_KEY` (the key) and `EMAIL_FROM`, for example `Design Dimensions Studio <studio@designdimensions.in>`. The address must use the verified domain. Save; Render redeploys.
+Without email, people who forget their password ask an administrator, who sets a new one in Settings → People → Edit → **Set password**.
 
 ## Google sign-in
 
@@ -133,8 +102,8 @@ To create the credentials:
 
 1. In [Google Cloud Console](https://console.cloud.google.com), create or pick a project.
 2. **APIs & Services → OAuth consent screen**: choose *External* (or *Internal* if everyone uses your Google Workspace), add the app name and your email, and keep the default scopes (`openid`, `email`, `profile`). Publish the app so it is not limited to test users.
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type *Web application*. Under **Authorised redirect URIs** add `https://<your-service>.onrender.com/api/auth/google/callback` (and `http://localhost:3000/api/auth/google/callback` for local use).
-4. Put the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (Render → Environment).
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type *Web application*. Under **Authorised redirect URIs** add `https://team.designdimensions.in/api/auth/google/callback` (and `http://localhost:3000/api/auth/google/callback` for local use).
+4. Put the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `api/config.php`.
 
 ## Google Drive
 
@@ -144,35 +113,45 @@ App permissions and Google Drive permissions are separate. Naming a reviewer in 
 - With `GOOGLE_DRIVE_API_KEY`, the server asks Drive whether the link opens for *anyone with the link*. It reports “Link-shared” or “Restricted in Drive”. It still does not claim that a specific reviewer can open a restricted file.
 - Previews use Google's embed URLs and load with the viewer's own Google session, so they show whether *you* can open it.
 
-## Deploying
+## Deploying on cPanel
 
-### Render free plan + Turso (no cost)
+Everything runs on the cPanel account: PHP serves the app and the database is one file in the home folder. No Node.js, Render or Turso is needed on the server.
 
-Render's free web services have no persistent disk, so the database lives in [Turso](https://turso.tech), a hosted SQLite service with a free tier. The included `render.yaml` sets this up.
+### First install
 
-1. **Create the database.** Sign up at turso.tech, create a database (pick the location closest to your Render region, which is Singapore in `render.yaml`), then from the database page copy its **URL** (`libsql://…turso.io`) and create an **auth token**.
-2. **Create the service.** In the Render dashboard choose **New → Blueprint**, connect GitHub and select this repository. When asked, paste `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`, then click **Apply**. The first build takes a few minutes.
-3. Open the `onrender.com` URL. The tables and demo workspace are created automatically on first start. Invite links use Render's address automatically; set `PUBLIC_URL` if you add a custom domain.
-4. Create your real administrator from your own computer, pointed at the same Turso database:
+1. **Subdomain.** cPanel → **Domains → Create a New Domain**: `team.designdimensions.in`. Note its document root (for example `/home1/a178436f/team.designdimensions.in`). Then **SSL/TLS Status → Run AutoSSL** so it gets HTTPS.
+2. **PHP.** cPanel → **MultiPHP Manager**: set the subdomain to PHP 8.1 or newer. If the app later says `pdo_sqlite` is missing, enable it in **Select PHP Version → Extensions**.
+3. **Build the zip** on your computer: `npm ci && npm run package` → `release/team-studio.zip`.
+4. **Upload.** File Manager → the subdomain's document root → **Upload** the zip → **Extract**.
+5. **Settings.** In `api/`, copy `config.sample.php` to `config.php` and edit it (File Manager → Edit). At least `PUBLIC_URL`, `DATABASE_PATH` and `DEMO_MODE`.
+6. **Database folder.** File Manager → home folder → **+ Folder** `studio-data` (outside `public_html`). Put the database there (next section), or leave it empty for a new workspace.
+7. Open `https://team.designdimensions.in/api/health`; it answers `{"ok":true}`.
+
+### Moving from Turso and Render (one time)
+
+1. Finish the steps above, but do not tell the team yet.
+2. **Freeze the old site:** Render → the service → **Settings → Suspend Web Service**.
+3. **Copy the data** on your computer (Turso dashboard → the database → its URL and a new token):
    ```bash
-   TURSO_DATABASE_URL=libsql://… TURSO_AUTH_TOKEN=… npm run create-admin -- "Your Name" you@designdimensions.com
+   TURSO_DATABASE_URL='libsql://…turso.io' TURSO_AUTH_TOKEN='…' DATABASE_PATH=./studio.db npm run import-from-turso
    ```
-5. Before adding real clients, set `DEMO_MODE=false` in the service's **Environment** tab. Demo accounts then stop signing in and the login page no longer lists them. Remove the sample work in Settings → Demo data.
+   Every line must say `ok`. It writes one file, `studio.db`, and refuses to overwrite an existing one.
+4. **Upload** `studio.db` into `studio-data/` on cPanel.
+5. Sign in at the new address and check people and tasks. Everyone keeps their password; each person's first sign-in takes a second or two longer while it is upgraded.
+6. Send the team the new address. Keep Render suspended (and Turso) for a week as a fallback, then delete them.
 
-Free-plan behaviour to expect: the service sleeps after about 15 minutes without visits and takes roughly 30–60 seconds to wake on the next visit. Live updates reconnect automatically. Data is safe in Turso throughout. Check current free-tier limits on both services when you sign up.
+### Updating
 
-To move to an always-on paid instance later, change `plan: free` to `plan: starter` in `render.yaml`; nothing else needs to change.
+`npm run package`, upload the zip to the same folder and extract it over the old files. `api/config.php` and the database are not touched.
 
-### Other hosts
+### Backups
 
-Any host that runs a Node.js process with a persistent disk works (Render, Railway, Fly.io, a small VM). A `Dockerfile` is included:
+Everything is in `studio-data/` (`studio.db`, plus `-wal`/`-shm` files while in use). Include the home folder in cPanel **Backup**, and download a copy regularly.
 
-```bash
-docker build -t dd-studio .
-docker run -p 3000:3000 -v dd-data:/data -e PUBLIC_URL=https://studio.example.com -e DEMO_MODE=false dd-studio
-```
+### Notes
 
-Run a single instance: live updates are held in one process. Put it behind HTTPS, and either mount a persistent volume for the local database file or set `TURSO_DATABASE_URL`.
+- Live updates are a quick check every 5 seconds from each open page; it pauses while the tab is hidden.
+- `.htaccess` sends every `/api/…` request to `api/index.php` and forces HTTPS. `api/config.php` and `api/lib/` are blocked from the web.
 
 ## What is still needed
 

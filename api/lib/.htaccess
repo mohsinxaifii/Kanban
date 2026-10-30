@@ -1,0 +1,2 @@
+# PHP libraries are loaded by index.php only.
+Require all denied
